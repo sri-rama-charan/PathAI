@@ -12,7 +12,7 @@
 // [React Form Data] ──> submitLearningPlan() ──> fetch(POST /api/plan) ──> [FastAPI Backend]
 // ==============================================================================
 
-import type { LearningPathFormData, PlanApiRequest, PlanApiResponse } from '../types/form';
+import type { LearningPathFormData, PlanApiRequest, PlanApiResponse, PlanModifyApiRequest } from '../types/form';
 
 // The base URL of our running FastAPI server
 const API_BASE_URL = 'http://localhost:8000';
@@ -72,3 +72,42 @@ export async function submitLearningPlan(formData: LearningPathFormData): Promis
   const data: PlanApiResponse = await response.json();
   return data;
 }
+
+/**
+ * Sends the existing plan + user feedback to POST /api/plan/modify.
+ * Returns the revised PlanApiResponse containing the modified plan.
+ *
+ * @param payload - The current plan, feedback string, and original schedule constraints.
+ * @returns Promise<PlanApiResponse> - The revised plan response.
+ */
+export async function modifyLearningPlan(payload: PlanModifyApiRequest): Promise<PlanApiResponse> {
+  const response = await fetch(`${API_BASE_URL}/api/plan/modify`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(payload),
+  });
+
+  if (!response.ok) {
+    let errorDetail = `Server returned status ${response.status}`;
+    try {
+      const errorJson = await response.json();
+      if (Array.isArray(errorJson.detail)) {
+        errorDetail = errorJson.detail
+          .map((item: { loc?: string[]; msg?: string }) => {
+            const field = item.loc ? item.loc[item.loc.length - 1] : 'field';
+            return `${field}: ${item.msg}`;
+          })
+          .join(', ');
+      } else if (typeof errorJson.detail === 'string') {
+        errorDetail = errorJson.detail;
+      }
+    } catch {
+      // Response was not JSON
+    }
+    throw new Error(errorDetail);
+  }
+
+  const data: PlanApiResponse = await response.json();
+  return data;
+}
+

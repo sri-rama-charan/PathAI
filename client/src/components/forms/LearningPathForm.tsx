@@ -172,7 +172,18 @@ export const LearningPathForm: React.FC = () => {
 
   // If a valid response was received from the backend, show the response screen
   if (apiResponse) {
-    return <SubmissionPreview response={apiResponse} onReset={handleReset} />;
+    return (
+      <SubmissionPreview
+        response={apiResponse}
+        onReset={handleReset}
+        planConstraints={{
+          durationDays: Number(formData.durationDays),
+          hoursPerDay: Number(formData.hoursPerDay),
+          startDate: formData.startDate,
+        }}
+      />
+    );
+
   }
 
   // ----------------------------------------------------------------------------

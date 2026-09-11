@@ -13,9 +13,19 @@
 
 from fastapi import FastAPI, HTTPException, Query, status
 from fastapi.middleware.cors import CORSMiddleware
-from app.schemas import PlanRequest, PlanResponse, SearchResponse
-from app.services.llm import generate_learning_plan
+from app.schemas import (
+    PlanRequest,
+    PlanResponse,
+    PlanModifyRequest,
+    SearchResponse,
+    ResearchRequest,
+    ResearchResponse,
+)
+from app.services.llm import generate_learning_plan, modify_learning_plan
 from app.services.search import search_web
+from app.services.research_graph import run_research_workflow
+# Preserved for educational comparison between manual tool-calling and LangGraph
+from app.services.tool_runner import research_topic
 
 # ------------------------------------------------------------------------------
 # 1. Create the FastAPI Application
@@ -154,4 +164,92 @@ def api_search_web(
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail="An unexpected error occurred while executing the search.",
+        )
+
+
+@app.post(
+    "/api/research",
+    response_model=ResearchResponse,
+    status_code=status.HTTP_200_OK,
+    summary="Research Topic with LangGraph StateGraph Workflow",
+)
+def api_research_topic(request: ResearchRequest) -> ResearchResponse:
+    """
+    Executes the LangGraph research workflow.
+
+    Flow:
+    START
+      ↓
+    analyze_goal (LLM analysis of user topic)
+      ↓
+    search_resources (Deterministic Python web search via Tavily)
+      ↓
+    generate_response (LLM answer synthesis)
+      ↓
+    END
+    """
+    try:
+        return run_research_workflow(request.query)
+    except ValueError as val_err:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail=str(val_err),
+        )
+    except RuntimeError as run_err:
+        raise HTTPException(
+            status_code=status.HTTP_502_BAD_GATEWAY,
+            detail=str(run_err),
+        )
+    except Exception:
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail="An unexpected error occurred during LangGraph workflow execution.",
+        )
+
+
+@app.post(
+    "/api/plan/modify",
+    response_model=PlanResponse,
+    status_code=status.HTTP_200_OK,
+    summary="Modify an Existing AI Learning Plan Based on User Feedback",
+)
+def modify_plan_request(request: PlanModifyRequest) -> PlanResponse:
+    """
+    Receives the current learning plan and user feedback, asks Gemini to
+    produce a modified version that preserves the original schedule constraints
+    (duration, start date, daily hours) while applying the requested changes.
+
+    Flow:
+      POST /api/plan/modify
+        ↓
+      Validate PlanModifyRequest (Pydantic)
+        ↓
+      modify_learning_plan() → Gemini (structured output)
+        ↓
+      validate_modified_plan() — strict constraint checks
+        ↓
+      validate_and_fix_plan_deterministically() — date/day/hour corrections
+        ↓
+      Return PlanResponse
+    """
+    try:
+        plan_result = modify_learning_plan(request)
+        return PlanResponse(
+            message="Learning plan modified successfully",
+            data=plan_result,
+        )
+    except ValueError as val_err:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail=str(val_err),
+        )
+    except RuntimeError as run_err:
+        raise HTTPException(
+            status_code=status.HTTP_502_BAD_GATEWAY,
+            detail=f"AI Service Error: {str(run_err)}",
+        )
+    except Exception:
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail="An unexpected error occurred while modifying the learning plan.",
         )

@@ -11,7 +11,8 @@
 // ==============================================================================
 
 import React, { useState } from 'react';
-import type { PlanApiResponse } from '../../types/form';
+import type { ApprovalStatus, LearningPlan, PlanApiResponse } from '../../types/form';
+import PlanApproval from './PlanApproval';
 import {
   LuCheck,
   LuArrowLeft,
@@ -25,14 +26,28 @@ import {
   LuLightbulb,
 } from 'react-icons/lu';
 
+/** The original schedule constraints captured at submission time. */
+interface PlanConstraints {
+  durationDays: number;
+  hoursPerDay: number;
+  startDate: string;
+}
+
 interface SubmissionPreviewProps {
   response: PlanApiResponse;
   onReset: () => void;
+  planConstraints: PlanConstraints;
 }
 
-export const SubmissionPreview: React.FC<SubmissionPreviewProps> = ({ response, onReset }) => {
+export const SubmissionPreview: React.FC<SubmissionPreviewProps> = ({ response, onReset, planConstraints }) => {
   const [showJson, setShowJson] = useState(false);
-  const { data } = response;
+  // Approval state: initialized to 'awaiting_approval' whenever a new plan is displayed.
+  // Reset is handled implicitly — onReset unmounts this component entirely.
+  const [approvalStatus, setApprovalStatus] = useState<ApprovalStatus>('awaiting_approval');
+  // Hold the displayed plan in local state so it can be replaced after regeneration.
+  const [currentResponse, setCurrentResponse] = useState<PlanApiResponse>(response);
+
+  const { data } = currentResponse;
   const { feasible, feasibilityMessage, estimatedRequiredHours, availableHours, recommendations, plan } = data;
 
   // ============================================================================
@@ -295,6 +310,18 @@ export const SubmissionPreview: React.FC<SubmissionPreviewProps> = ({ response, 
           ))}
         </div>
       </div>
+
+      {/* Human Approval Section */}
+      <PlanApproval
+        status={approvalStatus}
+        currentPlan={plan as LearningPlan}
+        planConstraints={planConstraints}
+        onApprove={() => setApprovalStatus('approved')}
+        onRegenerate={(revisedResponse) => {
+          setCurrentResponse(revisedResponse);
+          setApprovalStatus('awaiting_approval');
+        }}
+      />
 
       {/* Raw JSON Inspector */}
       <div className="space-y-2 pt-2 border-t border-[#222222]">

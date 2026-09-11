@@ -186,3 +186,94 @@ class SearchResponse(BaseModel):
         description="List of normalized web search results.",
     )
 
+
+# ==============================================================================
+# 5. Research Models (Tool-Calling Experiment)
+# ==============================================================================
+
+class ResearchRequest(BaseModel):
+    """
+    Incoming request schema for POST /api/research.
+    Allows Gemini to perform search_web tool calling if needed.
+    """
+    query: str = Field(
+        ...,
+        min_length=1,
+        description="The topic or question for the AI to research.",
+        examples=["What are the best resources to learn LangGraph?"],
+    )
+
+    @field_validator("query")
+    @classmethod
+    def validate_not_blank(cls, value: str) -> str:
+        """
+        Ensures the query is not just blank whitespace.
+        """
+        cleaned = value.strip()
+        if not cleaned:
+            raise ValueError("Query cannot be empty or contain only whitespace.")
+        return cleaned
+
+
+class ResearchResponse(BaseModel):
+    """
+    Standard response model for POST /api/research.
+    Returns the AI's synthesized answer along with any web sources consulted.
+    """
+    query: str = Field(..., description="The original user query.")
+    answer: str = Field(..., description="The final answer produced by Gemini.")
+    sources: List[SearchResult] = Field(
+        default_factory=list,
+        description="List of web search sources retrieved if the tool was called.",
+    )
+
+
+# ==============================================================================
+# 6. Plan Modification Schema
+# ==============================================================================
+
+class PlanModifyRequest(BaseModel):
+    """
+    Request schema for POST /api/plan/modify.
+
+    Carries the full current plan (so Gemini can see what exists) plus the
+    user's plain-English feedback describing what they want changed.
+
+    The original scheduling constraints (start date, duration, hours/day) are
+    embedded inside currentPlan.days and preserved by the LLM instructions.
+    """
+    currentPlan: LearningPlan = Field(
+        ...,
+        description="The existing LearningPlan that should be modified.",
+    )
+    feedback: str = Field(
+        ...,
+        min_length=1,
+        description="Plain-English description of what the user wants changed.",
+        examples=["Add more hands-on projects and reduce the amount of theory."],
+    )
+    # Original constraints — needed so validation can re-check bounds
+    durationDays: int = Field(
+        ...,
+        gt=0,
+        le=365,
+        description="Original plan duration in days (must match currentPlan.days length).",
+    )
+    hoursPerDay: float = Field(
+        ...,
+        gt=0.0,
+        le=24.0,
+        description="Original daily study hours limit.",
+    )
+    startDate: datetime.date = Field(
+        ...,
+        description="Original start date in YYYY-MM-DD format.",
+    )
+
+    @field_validator("feedback")
+    @classmethod
+    def validate_feedback_not_blank(cls, value: str) -> str:
+        cleaned = value.strip()
+        if not cleaned:
+            raise ValueError("Feedback cannot be empty or contain only whitespace.")
+        return cleaned

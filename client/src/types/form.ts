@@ -62,3 +62,25 @@ export interface PlanApiResponse {
   message: string;
   data: PlanResult;
 }
+
+/**
+ * Tracks where the user is in the human-approval flow for a generated plan.
+ *
+ * "awaiting_approval" — plan has been generated; user has not yet acted.
+ * "approved"          — user clicked "Approve Plan".
+ */
+export type ApprovalStatus = 'awaiting_approval' | 'approved';
+
+/**
+ * Request payload for POST /api/plan/modify.
+ * Mirrors the PlanModifyRequest Pydantic schema on the backend.
+ */
+export interface PlanModifyApiRequest {
+  currentPlan: LearningPlan;
+  feedback: string;
+  durationDays: number;
+  hoursPerDay: number;
+  startDate: string; // YYYY-MM-DD
+}
+
+
