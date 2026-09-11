@@ -5,17 +5,26 @@
   Purpose: The single HTML page skeleton that hosts our React Single Page Application (SPA).
   
   What this does:
-  1. Provides the root container `<div id="root"></div>` where React renders the UI.
-  2. Loads the entry script `/src/main.tsx`.
+  1. Preloads the Geist and Inter typography from Google Fonts.
+  2. Provides the root container `<div id="root"></div>` where React renders the UI.
+  3. Loads the entry script `/src/main.tsx`.
   ==============================================================================
 -->
-<html lang="en">
+<html lang="en" class="dark">
   <head>
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <title>PathAI — AI Learning Path Generator</title>
+
+    <!-- Google Fonts: Geist & Inter for typography -->
+    <link rel="preconnect" href="https://fonts.googleapis.com" />
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+    <link
+      href="https://fonts.googleapis.com/css2?family=Geist:wght@300;400;500;600;700&family=Geist+Mono:wght@400;500;600&family=Inter:wght@300;400;500;600;700&display=swap"
+      rel="stylesheet"
+    />
   </head>
-  <body class="bg-slate-900 text-slate-100 min-h-screen">
+  <body class="bg-[#000000] text-[#EDEDED] min-h-screen antialiased selection:bg-[#EDEDED] selection:text-[#000000]">
     <!-- React mounts the entire application inside this root element -->
     <div id="root"></div>
     <!-- Entry point TypeScript script -->
