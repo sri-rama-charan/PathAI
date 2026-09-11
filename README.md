@@ -6,9 +6,9 @@ PathAI is an intelligent, agent-driven application designed to help users master
 
 ## Current Development Status
 
-- **Stage**: Milestone 1 — Project Foundation & Boilerplate
-- **Status**: Clean baseline initialized with a React + TypeScript frontend and a FastAPI backend.
-- **Next Up**: Connecting the frontend and backend with a live health-check handshake, followed by our first single-prompt LLM connection.
+- **Stage**: Milestone 2 — AI Learning Plan & Feasibility Generation
+- **Status**: Live integration with Google Gemini (`gemini-2.5-flash`) generating structured, validated daily curricula or constructive feasibility advice.
+- **Next Up**: Introducing tools, web search for curated learning resources, and multi-step manual agent loops before moving to LangGraph.
 
 ---
 
@@ -18,12 +18,15 @@ PathAI is an intelligent, agent-driven application designed to help users master
 - **React 18/19**: Declarative user interface library.
 - **TypeScript**: Static typing for safer, bug-free JavaScript.
 - **Vite**: Ultra-fast frontend development server and bundler.
-- **Tailwind CSS**: Utility-first CSS framework for clean styling.
+- **Tailwind CSS**: Vercel Geist Design System styling tokens.
+- **React Icons**: Minimalist Lucide vector icons (`react-icons/lu`).
 
 ### Backend (`server/`)
-- **Python 3.11+**: Primary programming language for our backend and AI workflows.
-- **FastAPI**: Modern, fast web framework for building REST APIs with automatic OpenAPI/Swagger documentation.
-- **Uvicorn**: High-performance ASGI web server to serve FastAPI.
+- **Python 3.11+**: Primary backend language.
+- **FastAPI**: High-performance REST API with automated OpenAPI docs.
+- **Uvicorn**: High-performance ASGI web server.
+- **Google GenAI SDK (`google-genai`)**: Official Google Gemini Python SDK.
+- **Pydantic v2**: Strict schema validation and structured LLM outputs.
 
 ---
 
@@ -34,19 +37,32 @@ PathAI/
 ├── .gitignore              # Single root Git ignore (ignores .venv, node_modules, caches)
 ├── README.md               # Project documentation and quick start guide
 ├── client/                 # Frontend React + TypeScript application
-│   ├── index.html          # Web page HTML template
+│   ├── index.html          # Web page HTML template with Geist font preloads
 │   ├── package.json        # Frontend dependencies and scripts
 │   ├── vite.config.ts      # Vite configuration (React + Tailwind plugins)
-│   ├── tsconfig.json       # Single, unified TypeScript configuration
+│   ├── tsconfig.json       # Unified TypeScript configuration
 │   └── src/
 │       ├── main.tsx        # React mounting entry point
-│       ├── App.tsx         # Simple placeholder page
-│       └── index.css       # Tailwind CSS styling setup
+│       ├── App.tsx         # Root view layout
+│       ├── index.css       # Tailwind CSS & Geist design tokens
+│       ├── types/
+│       │   └── form.ts     # TypeScript interfaces for inputs, day plans, and API responses
+│       ├── services/
+│       │   └── api.ts      # Native fetch() API client connecting to FastAPI
+│       └── components/
+│           ├── layout/     # Header with brand mark
+│           ├── ui/         # FormField and PreferenceChip components
+│           └── forms/      # LearningPathForm and SubmissionPreview
 └── server/                 # Backend Python + FastAPI application
-    ├── requirements.txt    # Minimal Python dependencies (fastapi, uvicorn)
+    ├── requirements.txt    # Python dependencies (fastapi, uvicorn, google-genai)
+    ├── .env.example        # Template for Gemini API credentials
     └── app/
-        ├── __init__.py     # Marks 'app' as a Python package
-        └── main.py         # FastAPI application entry point with GET / endpoint
+        ├── __init__.py     # Package marker
+        ├── main.py         # FastAPI application and route definitions
+        ├── schemas.py      # Pydantic schemas (PlanRequest, DayPlan, PlanResult)
+        └── services/
+            ├── __init__.py # Services package marker
+            └── llm.py      # Gemini integration & deterministic Python validation
 ```
 
 ---
