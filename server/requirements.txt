@@ -1,0 +1,11 @@
+# ==============================================================================
+# File: server/requirements.txt
+# Purpose: Lists minimal Python dependencies required to run the PathAI backend.
+#
+# Packages:
+# - fastapi: Web framework for building REST APIs with auto-generated docs.
+# - uvicorn[standard]: Lightning-fast ASGI web server to run the FastAPI app.
+# ==============================================================================
+
+fastapi>=0.115.0
+uvicorn[standard]>=0.30.0

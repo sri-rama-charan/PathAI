@@ -1,0 +1,16 @@
+/* ==============================================================================
+   File: client/src/index.css
+   Purpose: Global stylesheet importing Tailwind CSS utilities and base styles.
+   
+   What this does:
+   - Imports Tailwind CSS 4 utility classes for quick, responsive, modern styling.
+   - Sets base font family and smooth scrolling for the application.
+   ============================================================================== */
+
+@import "tailwindcss";
+
+:root {
+  font-family: system-ui, -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Oxygen, Ubuntu, Cantarell, sans-serif;
+  line-height: 1.5;
+  font-weight: 400;
+}

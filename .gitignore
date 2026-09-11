@@ -1,0 +1,52 @@
+# ==============================================================================
+# File: .gitignore
+# Purpose: Specifies intentionally untracked files that Git should ignore.
+#
+# What this does:
+# Keeps unnecessary, temporary, and large auto-generated files (like Python virtual
+# environments, Node packages, build outputs, and cache files) out of our Git repository.
+# ==============================================================================
+
+# --- Python & Virtual Environments ---
+.venv/
+venv/
+env/
+ENV/
+__pycache__/
+*.py[cod]
+*$py.class
+.pytest_cache/
+.ruff_cache/
+.mypy_cache/
+.coverage
+htmlcov/
+
+# --- Node.js & Frontend Build ---
+node_modules/
+dist/
+dist-ssr/
+.vite/
+*.tsbuildinfo
+*.local
+
+# --- Logs ---
+logs/
+*.log
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+pnpm-debug.log*
+
+# --- Environment Variables & Secrets ---
+.env
+.env.*
+!.env.example
+
+# --- IDE & System Files ---
+.vscode/
+.idea/
+*.swp
+*.swo
+.DS_Store
+Thumbs.db
+desktop.ini
