@@ -277,3 +277,42 @@ class PlanModifyRequest(BaseModel):
         if not cleaned:
             raise ValueError("Feedback cannot be empty or contain only whitespace.")
         return cleaned
+
+
+# ==============================================================================
+# 7. Google Doc Creation Models
+# ==============================================================================
+
+class DocCreateRequest(BaseModel):
+    """
+    Request schema for POST /api/plan/create-doc.
+    Carries the approved LearningPlan to export into a Google Doc.
+    """
+    plan: LearningPlan = Field(
+        ...,
+        description="The approved LearningPlan to export into a Google Doc.",
+    )
+
+
+class DocCreateResponse(BaseModel):
+    """
+    Response schema for POST /api/plan/create-doc.
+    Returns the created Google Doc ID, web URL, and verification status.
+    """
+    message: str = Field(
+        ...,
+        description="Status message confirming document creation outcome.",
+        examples=["Google Doc created successfully"],
+    )
+    documentId: str = Field(
+        ...,
+        description="The unique Google Docs document ID.",
+    )
+    documentUrl: str = Field(
+        ...,
+        description="Canonical URL to open the generated Google Doc.",
+    )
+    verified: bool = Field(
+        default=True,
+        description="True if document existence and accessibility was verified via documents.get API.",
+    )

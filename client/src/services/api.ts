@@ -12,7 +12,14 @@
 // [React Form Data] ──> submitLearningPlan() ──> fetch(POST /api/plan) ──> [FastAPI Backend]
 // ==============================================================================
 
-import type { LearningPathFormData, PlanApiRequest, PlanApiResponse, PlanModifyApiRequest } from '../types/form';
+import type {
+  LearningPathFormData,
+  PlanApiRequest,
+  PlanApiResponse,
+  PlanModifyApiRequest,
+  LearningPlan,
+  DocCreateApiResponse,
+} from '../types/form';
 
 // The base URL of our running FastAPI server
 const API_BASE_URL = 'http://localhost:8000';
@@ -108,6 +115,63 @@ export async function modifyLearningPlan(payload: PlanModifyApiRequest): Promise
   }
 
   const data: PlanApiResponse = await response.json();
+  return data;
+}
+
+/**
+ * Checks with the backend whether Google OAuth credentials are stored in memory.
+ */
+export async function checkGoogleAuthStatus(): Promise<{ connected: boolean }> {
+  try {
+    const response = await fetch(`${API_BASE_URL}/api/auth/status`);
+    if (!response.ok) return { connected: false };
+    return await response.json();
+  } catch {
+    return { connected: false };
+  }
+}
+
+/**
+ * Initiates the Google OAuth authorization flow by redirecting to FastAPI backend.
+ */
+export function initiateGoogleAuth(): void {
+  window.location.href = `${API_BASE_URL}/api/auth/google`;
+}
+
+/**
+ * Sends an approved LearningPlan to POST /api/plan/create-doc to create a Google Doc.
+ *
+ * @param plan - The approved LearningPlan object.
+ * @returns Promise<DocCreateApiResponse> - Document ID and canonical document URL.
+ */
+export async function createGoogleDocForPlan(plan: LearningPlan): Promise<DocCreateApiResponse> {
+  const response = await fetch(`${API_BASE_URL}/api/plan/create-doc`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ plan }),
+  });
+
+  if (!response.ok) {
+    let errorDetail = `Server returned status ${response.status}`;
+    try {
+      const errorJson = await response.json();
+      if (typeof errorJson.detail === 'string') {
+        errorDetail = errorJson.detail;
+      } else if (Array.isArray(errorJson.detail)) {
+        errorDetail = errorJson.detail
+          .map((item: { loc?: string[]; msg?: string }) => {
+            const field = item.loc ? item.loc[item.loc.length - 1] : 'field';
+            return `${field}: ${item.msg}`;
+          })
+          .join(', ');
+      }
+    } catch {
+      // Response was not JSON
+    }
+    throw new Error(errorDetail);
+  }
+
+  const data: DocCreateApiResponse = await response.json();
   return data;
 }
 

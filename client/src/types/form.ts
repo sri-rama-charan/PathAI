@@ -83,4 +83,14 @@ export interface PlanModifyApiRequest {
   startDate: string; // YYYY-MM-DD
 }
 
+/**
+ * Response payload from POST /api/plan/create-doc.
+ */
+export interface DocCreateApiResponse {
+  message: string;
+  documentId: string;
+  documentUrl: string;
+  verified: boolean;
+}
+
 

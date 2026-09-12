@@ -11,8 +11,10 @@
 # 6. Exposes GET /docs: Interactive Swagger UI.
 # ==============================================================================
 
+from typing import Optional
 from fastapi import FastAPI, HTTPException, Query, status
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.responses import RedirectResponse
 from app.schemas import (
     PlanRequest,
     PlanResponse,
@@ -20,12 +22,20 @@ from app.schemas import (
     SearchResponse,
     ResearchRequest,
     ResearchResponse,
+    DocCreateRequest,
+    DocCreateResponse,
 )
 from app.services.llm import generate_learning_plan, modify_learning_plan
 from app.services.search import search_web
 from app.services.research_graph import run_research_workflow
 # Preserved for educational comparison between manual tool-calling and LangGraph
 from app.services.tool_runner import research_topic
+from app.services.oauth import (
+    get_authorization_url,
+    exchange_code_for_tokens,
+    is_google_connected,
+)
+from app.services.google_docs import create_google_doc_for_plan
 
 # ------------------------------------------------------------------------------
 # 1. Create the FastAPI Application
@@ -252,4 +262,152 @@ def modify_plan_request(request: PlanModifyRequest) -> PlanResponse:
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail="An unexpected error occurred while modifying the learning plan.",
+        )
+
+
+# ------------------------------------------------------------------------------
+# 4. Google OAuth Endpoints
+# ------------------------------------------------------------------------------
+
+FRONTEND_URL = "http://localhost:5173"
+
+
+@app.get(
+    "/api/auth/google",
+    summary="Initiate Google OAuth Flow",
+    status_code=status.HTTP_307_TEMPORARY_REDIRECT,
+)
+def initiate_google_oauth():
+    """
+    Redirects user to Google OAuth 2.0 authorization page.
+    Checks environment variables and handles missing config errors.
+    """
+    try:
+        auth_url, _ = get_authorization_url()
+        return RedirectResponse(url=auth_url, status_code=status.HTTP_307_TEMPORARY_REDIRECT)
+    except ValueError as val_err:
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=str(val_err),
+        )
+    except Exception as exc:
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"Failed to initiate Google OAuth flow: {str(exc)}",
+        )
+
+
+@app.get(
+    "/api/auth/google/callback",
+    summary="Google OAuth Callback Handler",
+)
+def google_oauth_callback(
+    code: Optional[str] = Query(None, description="Authorization code returned by Google"),
+    error: Optional[str] = Query(None, description="OAuth error code returned by Google"),
+    state: Optional[str] = Query(None, description="State verification token"),
+):
+    """
+    Handles redirect from Google OAuth authorization page:
+    - Receives authorization code
+    - Exchanges code for access/refresh tokens
+    - Handles OAuth denial and token exchange errors safely
+    - Temporarily stores credentials in server memory for this dev phase
+    - Redirects back to frontend UI with status
+    """
+    # 1. Handle OAuth denial or error returned by Google
+    if error:
+        return RedirectResponse(
+            url=f"{FRONTEND_URL}/?auth_error={error}",
+            status_code=status.HTTP_307_TEMPORARY_REDIRECT,
+        )
+
+    # 2. Handle missing authorization code
+    if not code:
+        return RedirectResponse(
+            url=f"{FRONTEND_URL}/?auth_error=missing_code",
+            status_code=status.HTTP_307_TEMPORARY_REDIRECT,
+        )
+
+    # 3. Exchange code for tokens & store in server memory
+    try:
+        exchange_code_for_tokens(code)
+        return RedirectResponse(
+            url=f"{FRONTEND_URL}/?auth=success",
+            status_code=status.HTTP_307_TEMPORARY_REDIRECT,
+        )
+    except Exception:
+        return RedirectResponse(
+            url=f"{FRONTEND_URL}/?auth_error=token_exchange_failed",
+            status_code=status.HTTP_307_TEMPORARY_REDIRECT,
+        )
+
+
+@app.get(
+    "/api/auth/status",
+    summary="Check Google Auth Status",
+)
+def check_auth_status():
+    """
+    Returns whether Google account credentials are connected in server memory.
+    """
+    return {"connected": is_google_connected()}
+
+
+# ------------------------------------------------------------------------------
+# 5. Google Docs Creation Endpoint
+# ------------------------------------------------------------------------------
+
+@app.post(
+    "/api/plan/create-doc",
+    response_model=DocCreateResponse,
+    status_code=status.HTTP_200_OK,
+    summary="Create Google Doc for Approved Learning Plan",
+)
+def api_create_google_doc(request: DocCreateRequest) -> DocCreateResponse:
+    """
+    Receives an approved LearningPlan and creates a formatted Google Doc.
+    
+    Checks:
+    - Verifies Google account is connected in server memory.
+    - Validates plan payload.
+    - Generates document via google_docs service and returns document ID and URL.
+    """
+    # 1. Reject if Google account is not connected
+    if not is_google_connected():
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Google account is not connected. Please connect your Google account before creating a Google Doc.",
+        )
+
+    # 2. Invoke Google Docs creation service module
+    try:
+        result = create_google_doc_for_plan(request.plan)
+        if not result["verified"]:
+            return DocCreateResponse(
+                message=result.get("error") or f"Google Doc was created ({result['document_id']}), but PathAI could not verify it.",
+                documentId=result["document_id"],
+                documentUrl=result["document_url"],
+                verified=False,
+            )
+
+        return DocCreateResponse(
+            message="Google Doc created and verified successfully",
+            documentId=result["document_id"],
+            documentUrl=result["document_url"],
+            verified=True,
+        )
+    except ValueError as val_err:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail=str(val_err),
+        )
+    except RuntimeError as run_err:
+        raise HTTPException(
+            status_code=status.HTTP_502_BAD_GATEWAY,
+            detail=str(run_err),
+        )
+    except Exception as exc:
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"An unexpected error occurred while creating the Google Doc: {str(exc)}",
         )
