@@ -1,11 +1,11 @@
 // ==============================================================================
 // File: client/src/components/forms/PlanApproval.tsx
-// Purpose: Human-approval UI for a generated learning plan, Google OAuth & Docs creation + verification.
+// Purpose: Human-approval UI for a generated learning plan, Google OAuth, Docs creation & Calendar event scheduling with verification.
 //
 // States:
 //   "awaiting_approval" — Shows Review/Approve/Modify buttons.
 //   "approved"          — Shows green plan confirmation banner, Google OAuth status,
-//                         and "Create Google Doc" action when account is connected.
+//                         "Create Google Doc" and "Schedule in Google Calendar" actions when account is connected.
 //
 // Modification flow:
 //   User clicks "Modify Plan" → textarea appears.
@@ -24,6 +24,13 @@
 //   User clicks button → POST /api/plan/create-doc (create → insert → verify).
 //   If verified: UI displays "✓ Google Doc Created" with "Open Google Doc" button.
 //   If unverified: UI displays "Google Doc was created, but PathAI could not verify it." with link.
+//
+// Google Calendar scheduling & verification flow:
+//   User approves plan & Google account is connected → "Schedule in Google Calendar" button enables.
+//   User clicks button → POST /api/plan/create-calendar (create → verify per day).
+//   Full success: UI displays "✓ Learning Plan Scheduled (X of X events verified)".
+//   Partial success: UI displays "⚠ Calendar scheduling partially completed (X of Y events verified)" with failed days list.
+//   Failure: UI displays "✕ Calendar scheduling failed".
 // ==============================================================================
 
 import React, { useState, useEffect } from 'react';
@@ -36,13 +43,20 @@ import {
   LuGlobe,
   LuFileText,
   LuExternalLink,
+  LuCalendar,
 } from 'react-icons/lu';
-import type { ApprovalStatus, LearningPlan, PlanApiResponse } from '../../types/form';
+import type {
+  ApprovalStatus,
+  LearningPlan,
+  PlanApiResponse,
+  CalendarCreateApiResponse,
+} from '../../types/form';
 import {
   modifyLearningPlan,
   checkGoogleAuthStatus,
   initiateGoogleAuth,
   createGoogleDocForPlan,
+  createCalendarEventsForPlan,
 } from '../../services/api';
 
 interface PlanConstraints {
@@ -54,7 +68,7 @@ interface PlanConstraints {
 interface PlanApprovalProps {
   /** Current approval state, controlled by SubmissionPreview. */
   status: ApprovalStatus;
-  /** The full LearningPlan currently displayed (needed to send to /api/plan/modify and /api/plan/create-doc). */
+  /** The full LearningPlan currently displayed (needed to send to /api/plan/modify, create-doc, and create-calendar). */
   currentPlan: LearningPlan;
   /** Original scheduling constraints from the form submission. */
   planConstraints: PlanConstraints;
@@ -89,6 +103,11 @@ export const PlanApproval: React.FC<PlanApprovalProps> = ({
   const [createdDocUrl, setCreatedDocUrl] = useState<string | null>(null);
   const [createdDocId, setCreatedDocId] = useState<string | null>(null);
   const [isDocVerified, setIsDocVerified] = useState<boolean | null>(null);
+
+  // Google Calendar Scheduling & Verification state
+  const [isSchedulingCalendar, setIsSchedulingCalendar] = useState(false);
+  const [calendarError, setCalendarError] = useState<string | null>(null);
+  const [calendarResponse, setCalendarResponse] = useState<CalendarCreateApiResponse | null>(null);
 
   useEffect(() => {
     // 1. Check URL query parameters for OAuth redirect status
@@ -181,6 +200,25 @@ export const PlanApproval: React.FC<PlanApprovalProps> = ({
     }
   };
 
+  const handleScheduleCalendarClick = async () => {
+    if (!currentPlan || isSchedulingCalendar) return;
+    setIsSchedulingCalendar(true);
+    setCalendarError(null);
+
+    try {
+      const response = await createCalendarEventsForPlan(currentPlan);
+      setCalendarResponse(response);
+    } catch (err) {
+      setCalendarError(
+        err instanceof Error
+          ? err.message
+          : 'Failed to schedule Google Calendar events. Please check your account connection and try again.'
+      );
+    } finally {
+      setIsSchedulingCalendar(false);
+    }
+  };
+
   // ── APPROVED state ────────────────────────────────────────────────────────
   if (status === 'approved') {
     return (
@@ -198,12 +236,12 @@ export const PlanApproval: React.FC<PlanApprovalProps> = ({
               ✓ Plan Approved
             </p>
             <p className="text-xs text-[#666666] mt-0.5">
-              Your learning path is confirmed. Export your approved plan to Google Docs below.
+              Your learning path is confirmed. Export to Google Docs or schedule on Google Calendar below.
             </p>
           </div>
         </div>
 
-        {/* Google OAuth & Docs Section */}
+        {/* Google OAuth, Docs & Calendar Section */}
         <div
           id="google-integration-section"
           className="p-4 rounded-xl bg-[#000000] border border-[#262626] space-y-3"
@@ -218,7 +256,7 @@ export const PlanApproval: React.FC<PlanApprovalProps> = ({
                   Google Integration
                 </p>
                 <p className="text-[11px] text-[#666666] mt-0.5">
-                  Export your approved curriculum directly into Google Docs.
+                  Export curriculum into Google Docs and schedule daily study sessions in Google Calendar.
                 </p>
               </div>
             </div>
@@ -342,6 +380,137 @@ export const PlanApproval: React.FC<PlanApprovalProps> = ({
               )}
             </div>
           )}
+
+          {/* Schedule in Google Calendar Action Section */}
+          {isGoogleConnected && (
+            <div
+              id="google-calendar-action-container"
+              className="pt-3 border-t border-[#1A1A1A] flex flex-col sm:flex-row sm:items-center justify-between gap-3"
+            >
+              {calendarResponse ? (
+                calendarResponse.status === 'success' ? (
+                  /* Full Success Banner */
+                  <div
+                    id="google-calendar-scheduled-banner"
+                    className="w-full p-3 rounded-lg bg-emerald-500/10 border border-emerald-500/25 flex items-center justify-between gap-3"
+                  >
+                    <div className="flex items-center gap-2 text-xs font-semibold text-emerald-400">
+                      <LuCheck className="w-4 h-4 flex-shrink-0" />
+                      <span>✓ Learning Plan Scheduled</span>
+                      <span className="text-[11px] font-normal text-emerald-400/80">
+                        ({calendarResponse.verifiedCount} of {calendarResponse.eventsCount} events verified)
+                      </span>
+                    </div>
+                    <a
+                      id="btn-open-google-calendar"
+                      href={
+                        calendarResponse.events.find((e) => e.htmlLink)?.htmlLink ||
+                        'https://calendar.google.com/calendar/r'
+                      }
+                      target="_blank"
+                      rel="noopener noreferrer"
+                      className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-semibold
+                                 bg-emerald-500 hover:bg-emerald-400 active:bg-emerald-600
+                                 text-black transition-colors cursor-pointer flex-shrink-0"
+                    >
+                      <span>Open Google Calendar</span>
+                      <LuExternalLink className="w-3.5 h-3.5" />
+                    </a>
+                  </div>
+                ) : calendarResponse.status === 'partial_success' ? (
+                  /* Partial Success Banner */
+                  <div
+                    id="google-calendar-partial-banner"
+                    className="w-full p-3 rounded-lg bg-amber-500/10 border border-amber-500/25 space-y-2"
+                  >
+                    <div className="flex items-center justify-between gap-2 text-xs font-semibold text-amber-400">
+                      <div className="flex items-center gap-2">
+                        <LuCircleAlert className="w-4 h-4 flex-shrink-0" />
+                        <span>⚠ Calendar scheduling partially completed</span>
+                        <span className="text-[11px] font-normal text-amber-400/90">
+                          ({calendarResponse.verifiedCount} of {calendarResponse.eventsCount} events verified)
+                        </span>
+                      </div>
+                      <a
+                        id="btn-open-google-calendar-partial"
+                        href={
+                          calendarResponse.events.find((e) => e.htmlLink)?.htmlLink ||
+                          'https://calendar.google.com/calendar/r'
+                        }
+                        target="_blank"
+                        rel="noopener noreferrer"
+                        className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-semibold
+                                   bg-amber-500 hover:bg-amber-400 active:bg-amber-600
+                                   text-black transition-colors cursor-pointer flex-shrink-0"
+                      >
+                        <span>Open Google Calendar</span>
+                        <LuExternalLink className="w-3.5 h-3.5" />
+                      </a>
+                    </div>
+
+                    {calendarResponse.events.some((e) => !e.verified) && (
+                      <div className="text-[11px] text-amber-400/90 pt-1.5 border-t border-amber-500/20 space-y-1">
+                        <p className="font-medium text-amber-300">Unverified / Failed days:</p>
+                        <ul className="list-disc list-inside space-y-0.5 text-[10.5px]">
+                          {calendarResponse.events
+                            .filter((e) => !e.verified)
+                            .map((e) => (
+                              <li key={e.day}>
+                                Day {e.day} ({e.topic}){e.error ? `: ${e.error}` : ''}
+                              </li>
+                            ))}
+                        </ul>
+                      </div>
+                    )}
+                  </div>
+                ) : (
+                  /* Full Failure Banner */
+                  <div
+                    id="google-calendar-failure-banner"
+                    className="w-full p-3 rounded-lg bg-rose-500/10 border border-rose-500/25 space-y-1.5"
+                  >
+                    <div className="flex items-center justify-between gap-2 text-xs font-semibold text-rose-400">
+                      <div className="flex items-center gap-2">
+                        <LuCircleAlert className="w-4 h-4 flex-shrink-0" />
+                        <span>✕ Calendar scheduling failed</span>
+                      </div>
+                      <span className="text-[11px] font-normal text-rose-400/90">
+                        (0 of {calendarResponse.eventsCount} events verified)
+                      </span>
+                    </div>
+                  </div>
+                )
+              ) : (
+                <div className="w-full flex items-center justify-between gap-3">
+                  <span className="text-xs text-[#A1A1A1]">
+                    Automatically schedule daily study sessions into your Google Calendar.
+                  </span>
+                  <button
+                    id="btn-schedule-google-calendar"
+                    type="button"
+                    disabled={isSchedulingCalendar}
+                    onClick={handleScheduleCalendarClick}
+                    className="flex items-center gap-2 px-4 py-2 rounded-lg text-xs font-semibold
+                               bg-[#FFFFFF] hover:bg-[#E5E5E5] active:bg-[#CCCCCC]
+                               text-[#000000] transition-colors cursor-pointer
+                               disabled:opacity-60 disabled:cursor-not-allowed flex-shrink-0"
+                  >
+                    {isSchedulingCalendar ? (
+                      <>
+                        <LuRefreshCw className="w-3.5 h-3.5 animate-spin" />
+                        <span>Scheduling Events…</span>
+                      </>
+                    ) : (
+                      <>
+                        <LuCalendar className="w-3.5 h-3.5" />
+                        <span>Schedule in Google Calendar</span>
+                      </>
+                    )}
+                  </button>
+                </div>
+              )}
+            </div>
+          )}
         </div>
 
         {/* OAuth Error Alert */}
@@ -363,6 +532,17 @@ export const PlanApproval: React.FC<PlanApprovalProps> = ({
           >
             <LuCircleAlert className="w-3.5 h-3.5 mt-0.5 flex-shrink-0" />
             <span>{docCreateError}</span>
+          </div>
+        )}
+
+        {/* Calendar Scheduling Error Alert */}
+        {calendarError && (
+          <div
+            id="google-calendar-error"
+            className="flex items-start gap-2 p-3 rounded-lg bg-rose-500/5 border border-rose-500/20 text-xs text-rose-400"
+          >
+            <LuCircleAlert className="w-3.5 h-3.5 mt-0.5 flex-shrink-0" />
+            <span>{calendarError}</span>
           </div>
         )}
       </div>

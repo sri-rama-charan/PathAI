@@ -32,7 +32,7 @@ const AVAILABLE_PREFERENCES: ResourcePreference[] = ['Videos', 'Documentation', 
 
 export const LearningPathForm: React.FC = () => {
   // ----------------------------------------------------------------------------
-  // 1. State Definition
+  // 1. State Definition (with sessionStorage persistence for OAuth redirects)
   // ----------------------------------------------------------------------------
   const initialFormData: LearningPathFormData = {
     goal: '',
@@ -43,11 +43,27 @@ export const LearningPathForm: React.FC = () => {
     preferences: ['Videos', 'Projects'],
   };
 
-  const [formData, setFormData] = useState<LearningPathFormData>(initialFormData);
+  const [formData, setFormData] = useState<LearningPathFormData>(() => {
+    try {
+      const saved = sessionStorage.getItem('pathai_form_data');
+      return saved ? JSON.parse(saved) : initialFormData;
+    } catch {
+      return initialFormData;
+    }
+  });
+
   const [errors, setErrors] = useState<FormErrors>({});
   const [isLoading, setIsLoading] = useState<boolean>(false);
   const [serverError, setServerError] = useState<string | null>(null);
-  const [apiResponse, setApiResponse] = useState<PlanApiResponse | null>(null);
+
+  const [apiResponse, setApiResponse] = useState<PlanApiResponse | null>(() => {
+    try {
+      const saved = sessionStorage.getItem('pathai_plan_response');
+      return saved ? JSON.parse(saved) : null;
+    } catch {
+      return null;
+    }
+  });
 
   // ----------------------------------------------------------------------------
   // 2. Input Change Handler
@@ -57,10 +73,16 @@ export const LearningPathForm: React.FC = () => {
   ) => {
     const { name, value, type } = e.target;
 
-    setFormData((prev) => ({
-      ...prev,
-      [name]: type === 'number' ? (value === '' ? '' : Number(value)) : value,
-    }));
+    setFormData((prev) => {
+      const updated = {
+        ...prev,
+        [name]: type === 'number' ? (value === '' ? '' : Number(value)) : value,
+      };
+      try {
+        sessionStorage.setItem('pathai_form_data', JSON.stringify(updated));
+      } catch {}
+      return updated;
+    });
 
     // Clear validation error when user edits the field
     if (errors[name as keyof LearningPathFormData]) {
@@ -82,11 +104,15 @@ export const LearningPathForm: React.FC = () => {
   const handleTogglePreference = (preference: ResourcePreference) => {
     setFormData((prev) => {
       const exists = prev.preferences.includes(preference);
-      const updated = exists
+      const updatedPreferences = exists
         ? prev.preferences.filter((p) => p !== preference)
         : [...prev.preferences, preference];
 
-      return { ...prev, preferences: updated };
+      const updated = { ...prev, preferences: updatedPreferences };
+      try {
+        sessionStorage.setItem('pathai_form_data', JSON.stringify(updated));
+      } catch {}
+      return updated;
     });
   };
 
@@ -148,7 +174,14 @@ export const LearningPathForm: React.FC = () => {
       const response = await submitLearningPlan(formData);
       console.log('FastAPI Response Received:', response);
 
-      // Save backend response and transition to preview
+      // Save backend response and form data to sessionStorage across page redirects
+      try {
+        sessionStorage.setItem('pathai_plan_response', JSON.stringify(response));
+        sessionStorage.setItem('pathai_form_data', JSON.stringify(formData));
+      } catch (storageErr) {
+        console.warn('Failed to save plan response to sessionStorage:', storageErr);
+      }
+
       setApiResponse(response);
     } catch (err) {
       console.error('Failed to submit learning plan:', err);
@@ -166,6 +199,13 @@ export const LearningPathForm: React.FC = () => {
   // 6. Reset Handler
   // ----------------------------------------------------------------------------
   const handleReset = () => {
+    try {
+      sessionStorage.removeItem('pathai_plan_response');
+      sessionStorage.removeItem('pathai_form_data');
+      sessionStorage.removeItem('pathai_approval_status');
+    } catch (err) {
+      console.warn('Failed to clear sessionStorage:', err);
+    }
     setApiResponse(null);
     setServerError(null);
   };
@@ -183,7 +223,6 @@ export const LearningPathForm: React.FC = () => {
         }}
       />
     );
-
   }
 
   // ----------------------------------------------------------------------------

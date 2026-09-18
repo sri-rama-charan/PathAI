@@ -19,10 +19,11 @@ import type {
   PlanModifyApiRequest,
   LearningPlan,
   DocCreateApiResponse,
+  CalendarCreateApiResponse,
 } from '../types/form';
 
-// The base URL of our running FastAPI server
-const API_BASE_URL = 'http://localhost:8000';
+// The base URL of our running FastAPI server (configurable via VITE_API_BASE_URL env var)
+const API_BASE_URL = import.meta.env.VITE_API_BASE_URL || 'http://localhost:8000';
 
 /**
  * Sends the user's learning plan configuration to the FastAPI backend.
@@ -172,6 +173,43 @@ export async function createGoogleDocForPlan(plan: LearningPlan): Promise<DocCre
   }
 
   const data: DocCreateApiResponse = await response.json();
+  return data;
+}
+
+/**
+ * Sends an approved LearningPlan to POST /api/plan/create-calendar to schedule Google Calendar events.
+ *
+ * @param plan - The approved LearningPlan object.
+ * @returns Promise<CalendarCreateApiResponse> - Created events count, event IDs, and metadata.
+ */
+export async function createCalendarEventsForPlan(plan: LearningPlan): Promise<CalendarCreateApiResponse> {
+  const response = await fetch(`${API_BASE_URL}/api/plan/create-calendar`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ plan }),
+  });
+
+  if (!response.ok) {
+    let errorDetail = `Server returned status ${response.status}`;
+    try {
+      const errorJson = await response.json();
+      if (typeof errorJson.detail === 'string') {
+        errorDetail = errorJson.detail;
+      } else if (Array.isArray(errorJson.detail)) {
+        errorDetail = errorJson.detail
+          .map((item: { loc?: string[]; msg?: string }) => {
+            const field = item.loc ? item.loc[item.loc.length - 1] : 'field';
+            return `${field}: ${item.msg}`;
+          })
+          .join(', ');
+      }
+    } catch {
+      // Response was not JSON
+    }
+    throw new Error(errorDetail);
+  }
+
+  const data: CalendarCreateApiResponse = await response.json();
   return data;
 }
 

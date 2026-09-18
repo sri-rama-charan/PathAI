@@ -3,11 +3,11 @@
 # Purpose: Service module handling Google OAuth 2.0 flow for PathAI.
 #
 # Scopes:
-#   Request only minimum Google scopes for upcoming Google Docs feature:
+#   Request minimum Google scopes for Google Docs & Google Calendar features:
 #   - https://www.googleapis.com/auth/documents
 #   - https://www.googleapis.com/auth/drive.file
+#   - https://www.googleapis.com/auth/calendar.events
 #   - openid, userinfo.email (for identification)
-#   NO Google Calendar permissions requested.
 #
 # Storage:
 #   Credentials are stored in server memory dict (_token_store) for this dev phase.
@@ -23,12 +23,16 @@ os.environ["OAUTHLIB_INSECURE_TRANSPORT"] = "1"
 # Temporary in-memory token store for development phase (No DB used)
 _token_store: Dict[str, Any] = {}
 
-# Scopes restricted strictly to Google Docs integration & basic user identification
+# Temporary in-memory state store for PKCE code_verifier mapping (state -> {"code_verifier": verifier})
+_oauth_state_store: Dict[str, dict] = {}
+
+# Scopes for Google Docs, Google Calendar events, and basic user identification
 SCOPES = [
     "openid",
     "https://www.googleapis.com/auth/userinfo.email",
     "https://www.googleapis.com/auth/documents",
     "https://www.googleapis.com/auth/drive.file",
+    "https://www.googleapis.com/auth/calendar.events",
 ]
 
 
@@ -79,6 +83,7 @@ def _build_client_config() -> dict:
 def get_authorization_url() -> Tuple[str, str]:
     """
     Generates the Google OAuth authorization URL and state token for user redirection.
+    Stores the PKCE code_verifier in server memory linked to the generated state.
 
     Returns:
         Tuple[authorization_url, state]
@@ -97,27 +102,46 @@ def get_authorization_url() -> Tuple[str, str]:
         include_granted_scopes="true",
         prompt="consent",
     )
+
+    if state and flow.code_verifier:
+        _oauth_state_store[state] = {
+            "code_verifier": flow.code_verifier,
+        }
+
     return authorization_url, state
 
 
-def exchange_code_for_tokens(code: str) -> dict:
+def exchange_code_for_tokens(code: str, state: Optional[str] = None) -> dict:
     """
     Exchanges authorization code received from Google callback for access/refresh tokens.
+    Retrieves the stored PKCE code_verifier using the matching state parameter.
     Stores the resulting credentials temporarily in server memory.
 
     Args:
         code: Authorization code string from Google OAuth callback.
+        state: OAuth state string from Google OAuth callback.
 
     Returns:
         dict: Credential details (access_token, refresh_token, etc.).
     
     Raises:
-        ValueError: If authorization code is missing or empty.
+        ValueError: If authorization code or state is missing/invalid.
         RuntimeError: If code exchange with Google fails.
     """
     cleaned_code = code.strip() if code else ""
     if not cleaned_code:
         raise ValueError("Missing authorization code. Cannot exchange for tokens.")
+
+    cleaned_state = state.strip() if state else ""
+    if not cleaned_state:
+        raise ValueError("Missing OAuth state parameter. Cannot exchange for tokens.")
+
+    # Retrieve and safely remove the temporary PKCE code_verifier entry for this state
+    state_data = _oauth_state_store.pop(cleaned_state, None)
+    if not state_data or "code_verifier" not in state_data:
+        raise ValueError("Invalid or expired OAuth state parameter.")
+
+    code_verifier = state_data["code_verifier"]
 
     client_config = _build_client_config()
     _, _, redirect_uri = get_oauth_config()
@@ -128,6 +152,7 @@ def exchange_code_for_tokens(code: str) -> dict:
             scopes=SCOPES,
             redirect_uri=redirect_uri,
         )
+        flow.code_verifier = code_verifier
         flow.fetch_token(code=cleaned_code)
         credentials = flow.credentials
 
@@ -145,6 +170,22 @@ def exchange_code_for_tokens(code: str) -> dict:
         return token_data
 
     except Exception as exc:
+        print("\n" + "=" * 80)
+        print("[GOOGLE OAUTH ERROR DETAILS]")
+        print(f"  Exception Class: {type(exc).__module__}.{type(exc).__qualname__}")
+        print(f"  Error Message  : {exc}")
+        if hasattr(exc, "error"):
+            print(f"  OAuth Error    : {getattr(exc, 'error', None)}")
+        if hasattr(exc, "error_description"):
+            print(f"  Description    : {getattr(exc, 'error_description', None)}")
+        if hasattr(exc, "response") and getattr(exc, "response", None) is not None:
+            try:
+                res = getattr(exc, "response")
+                print(f"  HTTP Status    : {getattr(res, 'status_code', None)}")
+                print(f"  HTTP Body      : {getattr(res, 'text', None)}")
+            except Exception:
+                pass
+        print("=" * 80 + "\n")
         raise RuntimeError(f"Failed to exchange OAuth code for Google tokens: {str(exc)}")
 
 

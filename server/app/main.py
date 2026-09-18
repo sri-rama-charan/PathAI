@@ -24,6 +24,9 @@ from app.schemas import (
     ResearchResponse,
     DocCreateRequest,
     DocCreateResponse,
+    CalendarCreateRequest,
+    CalendarCreateResponse,
+    CalendarEventMeta,
 )
 from app.services.llm import generate_learning_plan, modify_learning_plan
 from app.services.search import search_web
@@ -36,6 +39,7 @@ from app.services.oauth import (
     is_google_connected,
 )
 from app.services.google_docs import create_google_doc_for_plan
+from app.services.google_calendar import create_calendar_events_for_plan
 
 # ------------------------------------------------------------------------------
 # 1. Create the FastAPI Application
@@ -321,8 +325,8 @@ def google_oauth_callback(
             status_code=status.HTTP_307_TEMPORARY_REDIRECT,
         )
 
-    # 2. Handle missing authorization code
-    if not code:
+    # 2. Handle missing authorization code or state token
+    if not code or not state:
         return RedirectResponse(
             url=f"{FRONTEND_URL}/?auth_error=missing_code",
             status_code=status.HTTP_307_TEMPORARY_REDIRECT,
@@ -330,12 +334,13 @@ def google_oauth_callback(
 
     # 3. Exchange code for tokens & store in server memory
     try:
-        exchange_code_for_tokens(code)
+        exchange_code_for_tokens(code, state=state)
         return RedirectResponse(
             url=f"{FRONTEND_URL}/?auth=success",
             status_code=status.HTTP_307_TEMPORARY_REDIRECT,
         )
-    except Exception:
+    except Exception as exc:
+        print(f"[OAUTH CALLBACK ERROR] Token exchange failed: {exc}")
         return RedirectResponse(
             url=f"{FRONTEND_URL}/?auth_error=token_exchange_failed",
             status_code=status.HTTP_307_TEMPORARY_REDIRECT,
@@ -410,4 +415,69 @@ def api_create_google_doc(request: DocCreateRequest) -> DocCreateResponse:
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail=f"An unexpected error occurred while creating the Google Doc: {str(exc)}",
+        )
+
+
+# ------------------------------------------------------------------------------
+# 6. Google Calendar Event Scheduling Endpoint
+# ------------------------------------------------------------------------------
+
+@app.post(
+    "/api/plan/create-calendar",
+    response_model=CalendarCreateResponse,
+    status_code=status.HTTP_200_OK,
+    summary="Schedule Learning Plan on Google Calendar",
+)
+def api_create_calendar_events(request: CalendarCreateRequest) -> CalendarCreateResponse:
+    """
+    Receives an approved LearningPlan and schedules one Google Calendar event per plan day.
+    
+    Checks:
+    - Verifies Google account connection in server memory.
+    - Validates plan payload and daily schedule.
+    - Generates calendar events via google_calendar service and returns event IDs and metadata.
+    """
+    # 1. Reject if Google account is not connected
+    if not is_google_connected():
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Google account is not connected. Please connect your Google account before scheduling Calendar events.",
+        )
+
+    # 2. Invoke Google Calendar creation service module
+    try:
+        res = create_calendar_events_for_plan(request.plan)
+        status_code_str = res["status"]
+
+        if status_code_str == "success":
+            message = f"✓ Learning Plan Scheduled ({res['verified_count']} of {res['events_count']} events verified)"
+        elif status_code_str == "partial_success":
+            message = f"⚠ Calendar scheduling partially completed ({res['verified_count']} of {res['events_count']} events verified)"
+        else:
+            message = f"✕ Calendar scheduling failed ({res['failed_count']} of {res['events_count']} events failed)"
+
+        return CalendarCreateResponse(
+            message=message,
+            status=status_code_str,
+            eventsCount=res["events_count"],
+            createdCount=res["created_count"],
+            verifiedCount=res["verified_count"],
+            failedCount=res["failed_count"],
+            eventIds=res["event_ids"],
+            events=[CalendarEventMeta(**item) for item in res["events"]],
+        )
+    except ValueError as val_err:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail=str(val_err),
+        )
+    except RuntimeError as run_err:
+        raise HTTPException(
+            status_code=status.HTTP_502_BAD_GATEWAY,
+            detail=str(run_err),
+        )
+    except Exception as exc:
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"An unexpected error occurred while scheduling Google Calendar events: {str(exc)}",
         )

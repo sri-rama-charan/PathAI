@@ -93,4 +93,29 @@ export interface DocCreateApiResponse {
   verified: boolean;
 }
 
+export interface CalendarEventMeta {
+  day: number;
+  topic: string;
+  date: string;
+  eventId?: string | null;
+  htmlLink?: string | null;
+  created: boolean;
+  verified: boolean;
+  error?: string | null;
+}
+
+/**
+ * Response payload from POST /api/plan/create-calendar supporting full, partial, or failure outcomes.
+ */
+export interface CalendarCreateApiResponse {
+  message: string;
+  status: 'success' | 'partial_success' | 'failure';
+  eventsCount: number;
+  createdCount: number;
+  verifiedCount: number;
+  failedCount: number;
+  eventIds: string[];
+  events: CalendarEventMeta[];
+}
+
 

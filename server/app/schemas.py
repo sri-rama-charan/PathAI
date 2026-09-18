@@ -316,3 +316,60 @@ class DocCreateResponse(BaseModel):
         default=True,
         description="True if document existence and accessibility was verified via documents.get API.",
     )
+
+
+# ==============================================================================
+# 8. Google Calendar Event Models
+# ==============================================================================
+
+class CalendarCreateRequest(BaseModel):
+    """
+    Request schema for POST /api/plan/create-calendar.
+    Carries the approved LearningPlan to export into Google Calendar events.
+    """
+    plan: LearningPlan = Field(
+        ...,
+        description="The approved LearningPlan to schedule on Google Calendar.",
+    )
+
+
+class CalendarEventMeta(BaseModel):
+    """
+    Metadata for an individual Google Calendar event creation & verification status.
+    """
+    day: int = Field(..., description="Day number in the learning plan.")
+    topic: str = Field(..., description="Topic of the day.")
+    date: str = Field(..., description="Target calendar date (YYYY-MM-DD).")
+    eventId: Optional[str] = Field(default=None, description="Created Google Calendar event ID if available.")
+    htmlLink: Optional[str] = Field(default=None, description="Direct web link to open event in Google Calendar.")
+    created: bool = Field(default=True, description="True if event creation succeeded.")
+    verified: bool = Field(default=True, description="True if event existence & accessibility was verified.")
+    error: Optional[str] = Field(default=None, description="Error details if creation or verification failed.")
+
+
+class CalendarCreateResponse(BaseModel):
+    """
+    Response schema for POST /api/plan/create-calendar supporting full, partial, or failure outcomes.
+    """
+    message: str = Field(
+        ...,
+        description="Status message confirming event scheduling outcome.",
+        examples=["Learning Plan scheduled successfully on Google Calendar"],
+    )
+    status: str = Field(
+        ...,
+        description="Overall scheduling status: 'success', 'partial_success', or 'failure'.",
+        examples=["success"],
+    )
+    eventsCount: int = Field(..., description="Total target days in learning plan.")
+    createdCount: int = Field(..., description="Total events created.")
+    verifiedCount: int = Field(..., description="Total events created and verified.")
+    failedCount: int = Field(..., description="Total events that failed creation or verification.")
+    eventIds: List[str] = Field(
+        default_factory=list,
+        description="List of verified Google Calendar event IDs.",
+    )
+    events: List[CalendarEventMeta] = Field(
+        default_factory=list,
+        description="Detailed per-day event metadata and status.",
+    )

@@ -41,9 +41,17 @@ interface SubmissionPreviewProps {
 
 export const SubmissionPreview: React.FC<SubmissionPreviewProps> = ({ response, onReset, planConstraints }) => {
   const [showJson, setShowJson] = useState(false);
-  // Approval state: initialized to 'awaiting_approval' whenever a new plan is displayed.
-  // Reset is handled implicitly — onReset unmounts this component entirely.
-  const [approvalStatus, setApprovalStatus] = useState<ApprovalStatus>('awaiting_approval');
+  
+  // Approval state: initialized from sessionStorage if returning from OAuth redirect
+  const [approvalStatus, setApprovalStatus] = useState<ApprovalStatus>(() => {
+    try {
+      const saved = sessionStorage.getItem('pathai_approval_status');
+      return (saved as ApprovalStatus) || 'awaiting_approval';
+    } catch {
+      return 'awaiting_approval';
+    }
+  });
+
   // Hold the displayed plan in local state so it can be replaced after regeneration.
   const [currentResponse, setCurrentResponse] = useState<PlanApiResponse>(response);
 
@@ -316,8 +324,17 @@ export const SubmissionPreview: React.FC<SubmissionPreviewProps> = ({ response, 
         status={approvalStatus}
         currentPlan={plan as LearningPlan}
         planConstraints={planConstraints}
-        onApprove={() => setApprovalStatus('approved')}
+        onApprove={() => {
+          try {
+            sessionStorage.setItem('pathai_approval_status', 'approved');
+          } catch {}
+          setApprovalStatus('approved');
+        }}
         onRegenerate={(revisedResponse) => {
+          try {
+            sessionStorage.setItem('pathai_plan_response', JSON.stringify(revisedResponse));
+            sessionStorage.setItem('pathai_approval_status', 'awaiting_approval');
+          } catch {}
           setCurrentResponse(revisedResponse);
           setApprovalStatus('awaiting_approval');
         }}
