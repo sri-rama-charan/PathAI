@@ -26,12 +26,14 @@ class PlanRequest(BaseModel):
     goal: str = Field(
         ...,
         min_length=1,
+        max_length=2000,
         description="The primary skill or subject the user wants to learn.",
         examples=["Learn RAG with LangChain"],
     )
     experience: str = Field(
         ...,
         min_length=1,
+        max_length=2000,
         description="The user's existing technical knowledge or experience level.",
         examples=["Learned python basics, familiar with linear regression"],
     )
@@ -199,6 +201,7 @@ class ResearchRequest(BaseModel):
     query: str = Field(
         ...,
         min_length=1,
+        max_length=2000,
         description="The topic or question for the AI to research.",
         examples=["What are the best resources to learn LangGraph?"],
     )
@@ -249,6 +252,7 @@ class PlanModifyRequest(BaseModel):
     feedback: str = Field(
         ...,
         min_length=1,
+        max_length=2000,
         description="Plain-English description of what the user wants changed.",
         examples=["Add more hands-on projects and reduce the amount of theory."],
     )

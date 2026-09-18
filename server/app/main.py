@@ -41,6 +41,97 @@ from app.services.oauth import (
 from app.services.google_docs import create_google_doc_for_plan
 from app.services.google_calendar import create_calendar_events_for_plan
 
+from contextlib import asynccontextmanager
+import logging
+import os
+
+from fastapi import FastAPI, HTTPException, Query, Request, Response, status
+from fastapi.middleware.cors import CORSMiddleware
+from fastapi.responses import JSONResponse, RedirectResponse
+from starlette.middleware.base import BaseHTTPMiddleware
+
+# Configure application logging
+logger = logging.getLogger(__name__)
+logging.basicConfig(
+    level=logging.INFO,
+    format="%(asctime)s [%(levelname)s] %(name)s: %(message)s",
+)
+
+REQUIRED_PRODUCTION_VARS = [
+    "GEMINI_API_KEY",
+    "TAVILY_API_KEY",
+    "GOOGLE_CLIENT_ID",
+    "GOOGLE_CLIENT_SECRET",
+    "GOOGLE_REDIRECT_URI",
+    "FRONTEND_URL",
+]
+
+PLACEHOLDER_PREFIXES = [
+    "your_",
+    "tvly-your",
+]
+
+
+def validate_production_environment() -> None:
+    """
+    Validates required environment variables when running in production mode (ENVIRONMENT=production).
+    Raises RuntimeError listing only the missing variable NAMES if any are missing or set to placeholders.
+    Never logs or exposes actual variable values.
+    """
+    env_name = os.getenv("ENVIRONMENT", "").strip().lower()
+    if env_name != "production":
+        return
+
+    missing_vars = []
+    for var_name in REQUIRED_PRODUCTION_VARS:
+        val = os.getenv(var_name, "").strip()
+        if not val or any(val.startswith(ph) for ph in PLACEHOLDER_PREFIXES):
+            missing_vars.append(var_name)
+
+    if missing_vars:
+        error_msg = f"Production startup failed: Missing or invalid required environment variable(s): {', '.join(missing_vars)}"
+        logger.error(error_msg)
+        raise RuntimeError(error_msg)
+
+    logger.info("Production environment validation successful. All required configuration variables are set.")
+
+
+@asynccontextmanager
+async def lifespan(app: FastAPI):
+    """
+    FastAPI lifespan context manager for startup validation and shutdown lifecycle hooks.
+    """
+    validate_production_environment()
+    yield
+
+
+def get_cors_origins() -> list:
+    """
+    Parses CORS allowed origins from CORS_ALLOWED_ORIGINS environment variable.
+    Format: comma-separated list of origin URLs.
+    
+    If CORS_ALLOWED_ORIGINS is missing or empty, defaults safely to development origins:
+    ["http://localhost:5173", "http://127.0.0.1:5173"].
+    
+    Ensures wildcard '*' is never automatically included.
+    """
+    raw_origins = os.getenv("CORS_ALLOWED_ORIGINS", "").strip()
+    if raw_origins:
+        parsed = [origin.strip() for origin in raw_origins.split(",") if origin.strip()]
+        if parsed:
+            return parsed
+            
+    return ["http://localhost:5173", "http://127.0.0.1:5173"]
+
+
+def get_frontend_url() -> str:
+    """
+    Retrieves the frontend web application URL for post-OAuth redirects.
+    Defaults to http://localhost:5173 if FRONTEND_URL is not configured.
+    """
+    return os.getenv("FRONTEND_URL", "http://localhost:5173").strip() or "http://localhost:5173"
+
+
 # ------------------------------------------------------------------------------
 # 1. Create the FastAPI Application
 # ------------------------------------------------------------------------------
@@ -48,23 +139,62 @@ app = FastAPI(
     title="PathAI Backend",
     description="Backend API for PathAI — AI Learning Path Generator",
     version="0.3.0",
+    lifespan=lifespan,
 )
 
-# ------------------------------------------------------------------------------
-# 2. Configure CORS (Cross-Origin Resource Sharing)
-# ------------------------------------------------------------------------------
-origins = [
-    "http://localhost:5173",
-    "http://127.0.0.1:5173",
-]
 
+# ------------------------------------------------------------------------------
+# 2. Security Headers Middleware
+# ------------------------------------------------------------------------------
+class SecurityHeadersMiddleware(BaseHTTPMiddleware):
+    """
+    Attaches security headers to every HTTP response:
+    - X-Content-Type-Options: nosniff
+    - X-Frame-Options: DENY
+    - Referrer-Policy: strict-origin-when-cross-origin
+    """
+    async def dispatch(self, request: Request, call_next) -> Response:
+        response = await call_next(request)
+        response.headers["X-Content-Type-Options"] = "nosniff"
+        response.headers["X-Frame-Options"] = "DENY"
+        response.headers["Referrer-Policy"] = "strict-origin-when-cross-origin"
+        return response
+
+
+app.add_middleware(SecurityHeadersMiddleware)
+
+# ------------------------------------------------------------------------------
+# 3. Configure CORS (Cross-Origin Resource Sharing)
+# ------------------------------------------------------------------------------
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=origins,
+    allow_origins=get_cors_origins(),
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
 )
+
+
+# ------------------------------------------------------------------------------
+# 4. Global Production Exception Handler
+# ------------------------------------------------------------------------------
+@app.exception_handler(Exception)
+async def unhandled_exception_handler(request: Request, exc: Exception):
+    """
+    Global exception handler for unhandled exceptions.
+    In production (ENVIRONMENT=production), returns a generic 500 error response
+    without leaking internal stack traces or implementation details to clients.
+    In development mode, re-raises to preserve standard debugging behavior.
+    """
+    env_name = os.getenv("ENVIRONMENT", "").strip().lower()
+    if env_name == "production":
+        logger.error("[PRODUCTION UNHANDLED EXCEPTION] Path: %s | Error: %s", request.url.path, exc, exc_info=True)
+        return JSONResponse(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            content={"detail": "An unexpected internal server error occurred."},
+        )
+
+    raise exc
 
 # ------------------------------------------------------------------------------
 # 3. Define Endpoints
@@ -273,9 +403,6 @@ def modify_plan_request(request: PlanModifyRequest) -> PlanResponse:
 # 4. Google OAuth Endpoints
 # ------------------------------------------------------------------------------
 
-FRONTEND_URL = "http://localhost:5173"
-
-
 @app.get(
     "/api/auth/google",
     summary="Initiate Google OAuth Flow",
@@ -318,17 +445,19 @@ def google_oauth_callback(
     - Temporarily stores credentials in server memory for this dev phase
     - Redirects back to frontend UI with status
     """
+    frontend_url = get_frontend_url()
+
     # 1. Handle OAuth denial or error returned by Google
     if error:
         return RedirectResponse(
-            url=f"{FRONTEND_URL}/?auth_error={error}",
+            url=f"{frontend_url}/?auth_error={error}",
             status_code=status.HTTP_307_TEMPORARY_REDIRECT,
         )
 
     # 2. Handle missing authorization code or state token
     if not code or not state:
         return RedirectResponse(
-            url=f"{FRONTEND_URL}/?auth_error=missing_code",
+            url=f"{frontend_url}/?auth_error=missing_code",
             status_code=status.HTTP_307_TEMPORARY_REDIRECT,
         )
 
@@ -336,13 +465,13 @@ def google_oauth_callback(
     try:
         exchange_code_for_tokens(code, state=state)
         return RedirectResponse(
-            url=f"{FRONTEND_URL}/?auth=success",
+            url=f"{frontend_url}/?auth=success",
             status_code=status.HTTP_307_TEMPORARY_REDIRECT,
         )
     except Exception as exc:
         print(f"[OAUTH CALLBACK ERROR] Token exchange failed: {exc}")
         return RedirectResponse(
-            url=f"{FRONTEND_URL}/?auth_error=token_exchange_failed",
+            url=f"{frontend_url}/?auth_error=token_exchange_failed",
             status_code=status.HTTP_307_TEMPORARY_REDIRECT,
         )
 

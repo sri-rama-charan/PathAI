@@ -17,8 +17,22 @@ import os
 from typing import Dict, Any, Tuple, Optional
 from google_auth_oauthlib.flow import Flow
 
-# Enable insecure transport for http:// localhost in development
-os.environ["OAUTHLIB_INSECURE_TRANSPORT"] = "1"
+def configure_oauth_transport() -> None:
+    """
+    Configures OAUTHLIB_INSECURE_TRANSPORT environment variable.
+    Enables insecure HTTP transport ONLY when ENVIRONMENT is explicitly set to 'development'.
+    Safe by default: if ENVIRONMENT is missing, 'production', or anything else,
+    insecure transport is NOT enabled (and removed from os.environ if present).
+    """
+    env_name = os.getenv("ENVIRONMENT", "").strip().lower()
+    if env_name == "development":
+        os.environ["OAUTHLIB_INSECURE_TRANSPORT"] = "1"
+    else:
+        os.environ.pop("OAUTHLIB_INSECURE_TRANSPORT", None)
+
+
+# Configure OAuth transport at module load time
+configure_oauth_transport()
 
 # Temporary in-memory token store for development phase (No DB used)
 _token_store: Dict[str, Any] = {}

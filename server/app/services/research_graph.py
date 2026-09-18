@@ -24,7 +24,10 @@
 # ==============================================================================
 
 import json
+import logging
 import os
+import time
+import uuid
 from typing import List, Optional, TypedDict
 
 from google.genai import types
@@ -33,6 +36,9 @@ from langgraph.graph import END, START, StateGraph
 from app.schemas import ResearchResponse, SearchResult
 from app.services.llm import get_gemini_client
 from app.services.search import search_web
+
+# Configure logger for the research graph module
+logger = logging.getLogger(__name__)
 
 # Maximum number of search-evaluate cycles before forcing generation.
 MAX_RETRIES = 2
@@ -47,6 +53,7 @@ class ResearchState(TypedDict):
     Shared state passed through every node in the research graph.
 
     Attributes:
+        run_id        : Unique correlation ID for tracking this workflow run.
         user_query    : The original query submitted by the user.
         analysis      : Gemini's brief analysis of the user's goal.
         search_query  : The actual query string sent to Tavily (may be refined
@@ -61,6 +68,7 @@ class ResearchState(TypedDict):
         retry_count   : How many search-evaluate cycles have completed so far.
         final_answer  : Gemini's final synthesised response.
     """
+    run_id: Optional[str]
     user_query: str
     analysis: Optional[str]
     search_query: Optional[str]
@@ -157,10 +165,13 @@ def analyze_goal(state: ResearchState) -> dict:
       - A brief textual analysis of the learning goal.
       - An optimised initial search query for Tavily.
 
-    Reads:   state["user_query"]
+    Reads:   state["user_query"], state["run_id"]
     Updates: state["analysis"], state["search_query"]
     """
+    node_start = time.perf_counter()
+    run_id = state.get("run_id") or "unknown"
     user_query = state["user_query"]
+    logger.info("[run: %s] [NODE: analyze_goal] Starting goal analysis...", run_id)
 
     prompt = f"""
 You are an expert technical curriculum analyst.
@@ -192,6 +203,9 @@ Respond with ONLY a valid JSON object — no markdown, no code fences, no extra 
         analysis = raw
         search_query = user_query
 
+    elapsed = time.perf_counter() - node_start
+    logger.info("[run: %s] [NODE: analyze_goal] Completed in %.2fs (generated query: '%s')", run_id, elapsed, search_query)
+
     return {
         "analysis": analysis,
         "search_query": search_query,
@@ -205,16 +219,27 @@ def search_resources(state: ResearchState) -> dict:
     Deterministic Python — no LLM involved.
     Executes our search_web() service (Tavily) using the current search_query
     from state (set by analyze_goal or refined by evaluate_resources on retries).
+    Handles search provider failures gracefully by returning an empty results list.
 
-    Reads:   state["search_query"], state["user_query"] (fallback)
+    Reads:   state["search_query"], state["user_query"] (fallback), state["run_id"]
     Updates: state["search_results"], state["retry_count"]
     """
+    node_start = time.perf_counter()
+    run_id = state.get("run_id") or "unknown"
     # Prefer the LLM-optimised search query; fall back to the raw user query
     query = state.get("search_query") or state["user_query"]
-    results: List[SearchResult] = search_web(query=query, max_results=5)
-
-    # Increment the retry counter so the router can enforce the cap
     current_retries = state.get("retry_count", 0)
+    logger.info("[run: %s] [NODE: search_resources] Starting search (iteration %d, query: '%s')...", run_id, current_retries + 1, query)
+
+    try:
+        results: List[SearchResult] = search_web(query=query, max_results=5)
+    except Exception as exc:
+        logger.error("[run: %s] [NODE: search_resources] search_web failed during search execution: %s", run_id, exc)
+        results = []
+
+    elapsed = time.perf_counter() - node_start
+    logger.info("[run: %s] [NODE: search_resources] Completed in %.2fs (%d results)", run_id, elapsed, len(results))
+
     return {
         "search_results": results,
         "retry_count": current_retries + 1,
@@ -229,11 +254,14 @@ def evaluate_resources(state: ResearchState) -> dict:
     to answer the user's query. If not, it also proposes a better search query
     for the next iteration.
 
-    Reads:   state["user_query"], state["search_results"]
+    Reads:   state["user_query"], state["search_results"], state["run_id"]
     Updates: state["evaluation"]
     """
+    node_start = time.perf_counter()
+    run_id = state.get("run_id") or "unknown"
     user_query = state["user_query"]
     search_results = state.get("search_results", [])
+    logger.info("[run: %s] [NODE: evaluate_resources] Starting evaluation for %d search results...", run_id, len(search_results))
 
     formatted = []
     for i, res in enumerate(search_results, 1):
@@ -287,7 +315,20 @@ Respond with ONLY a valid JSON object — no markdown, no code fences:
             "better_search_query": "",
         }
 
-    return {"evaluation": evaluation}
+    sufficient: bool = evaluation.get("sufficient", True)
+    reason: str = evaluation.get("reason", "")
+    better_query: str = evaluation.get("better_search_query", "").strip()
+
+    elapsed = time.perf_counter() - node_start
+    logger.info("[run: %s] [NODE: evaluate_resources] Completed in %.2fs — verdict: sufficient=%s (reason: '%s')", run_id, elapsed, sufficient, reason)
+    if not sufficient and better_query:
+        logger.info("[run: %s] [NODE: evaluate_resources] Resources insufficient. Proposed refined query: '%s'", run_id, better_query)
+
+    result_update = {"evaluation": evaluation}
+    if not sufficient and better_query:
+        result_update["search_query"] = better_query
+
+    return result_update
 
 
 def generate_response(state: ResearchState) -> dict:
@@ -297,12 +338,15 @@ def generate_response(state: ResearchState) -> dict:
     Uses Gemini to synthesise the final answer from the user's query,
     the goal analysis, and the retrieved search results.
 
-    Reads:   state["user_query"], state["analysis"], state["search_results"]
+    Reads:   state["user_query"], state["analysis"], state["search_results"], state["run_id"]
     Updates: state["final_answer"]
     """
+    node_start = time.perf_counter()
+    run_id = state.get("run_id") or "unknown"
     user_query = state["user_query"]
     analysis = state.get("analysis", "")
     search_results = state.get("search_results", [])
+    logger.info("[run: %s] [NODE: generate_response] Starting final response synthesis with %d sources...", run_id, len(search_results))
 
     formatted_sources = []
     for i, res in enumerate(search_results, 1):
@@ -339,6 +383,8 @@ Please provide a well-structured, authoritative, and helpful answer for the user
         system_instruction="You are PathAI's senior curriculum advisor. Provide rich, actionable learning roadmaps.",
     )
 
+    elapsed = time.perf_counter() - node_start
+    logger.info("[run: %s] [NODE: generate_response] Completed in %.2fs", run_id, elapsed)
     return {"final_answer": final_answer}
 
 
@@ -358,23 +404,24 @@ def route_after_evaluation(state: ResearchState) -> str:
     Returns:
         The name of the next node to execute.
     """
+    run_id = state.get("run_id") or "unknown"
     evaluation = state.get("evaluation") or {}
     sufficient: bool = evaluation.get("sufficient", True)
     retry_count: int = state.get("retry_count", 0)
 
     if sufficient:
+        logger.info("[run: %s] [ROUTER: route_after_evaluation] Decision: 'generate_response' (results sufficient, retry_count: %d/%d)", run_id, retry_count, MAX_RETRIES)
         return "generate_response"
 
     if retry_count > MAX_RETRIES:
-        # Retries exhausted — generate with what we have
+        logger.info("[run: %s] [ROUTER: route_after_evaluation] Decision: 'generate_response' (max retries %d reached, forcing generation)", run_id, MAX_RETRIES)
         return "generate_response"
 
-    # Results insufficient and retries remain — refine query and loop back.
-    # Inject the refined query so search_resources uses it next iteration.
     better_query = evaluation.get("better_search_query", "").strip()
     if better_query:
         state["search_query"] = better_query
 
+    logger.info("[run: %s] [ROUTER: route_after_evaluation] Decision: 'search_resources' (retrying loop iteration %d/%d with refined query: '%s')", run_id, retry_count, MAX_RETRIES, better_query or state.get("search_query"))
     return "search_resources"
 
 
@@ -431,7 +478,7 @@ research_graph = build_research_graph()
 # 6. Public Invocation Interface
 # ------------------------------------------------------------------------------
 
-def run_research_workflow(query: str) -> ResearchResponse:
+def run_research_workflow(query: str, run_id: Optional[str] = None) -> ResearchResponse:
     """
     Entry point called by the FastAPI /api/research endpoint.
 
@@ -440,6 +487,7 @@ def run_research_workflow(query: str) -> ResearchResponse:
 
     Args:
         query: The user's research topic or question.
+        run_id: Optional workflow correlation ID (autogenerated if not supplied).
 
     Returns:
         ResearchResponse with the final answer and retrieved sources.
@@ -452,7 +500,12 @@ def run_research_workflow(query: str) -> ResearchResponse:
     if not cleaned_query:
         raise ValueError("Research query cannot be empty.")
 
+    active_run_id = run_id or uuid.uuid4().hex[:8]
+    workflow_start_time = time.perf_counter()
+    logger.info("[run: %s] [WORKFLOW START] Initiating LangGraph research pipeline...", active_run_id)
+
     initial_state: ResearchState = {
+        "run_id": active_run_id,
         "user_query": cleaned_query,
         "analysis": None,
         "search_query": None,
@@ -465,7 +518,12 @@ def run_research_workflow(query: str) -> ResearchResponse:
     try:
         final_state = research_graph.invoke(initial_state)
     except Exception as exc:
+        total_elapsed = time.perf_counter() - workflow_start_time
+        logger.error("[run: %s] [WORKFLOW ERROR] LangGraph execution failed after %.2fs: %s", active_run_id, total_elapsed, exc)
         raise RuntimeError(f"LangGraph execution failed: {exc}") from exc
+
+    total_elapsed = time.perf_counter() - workflow_start_time
+    logger.info("[run: %s] [WORKFLOW COMPLETE] Total workflow execution completed in %.2fs (%d sources).", active_run_id, total_elapsed, len(final_state.get("search_results") or []))
 
     return ResearchResponse(
         query=cleaned_query,
