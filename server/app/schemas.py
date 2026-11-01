@@ -156,6 +156,15 @@ class PlanResponse(BaseModel):
         ...,
         description="The feasibility analysis and optional learning plan.",
     )
+    plan_id: Optional[int] = Field(
+        default=None,
+        description="Database primary key ID of the persisted learning plan record.",
+    )
+    planId: Optional[int] = Field(
+        default=None,
+        description="CamelCase alias of the database record ID.",
+    )
+
 
 
 # ==============================================================================
@@ -290,12 +299,19 @@ class PlanModifyRequest(BaseModel):
 class DocCreateRequest(BaseModel):
     """
     Request schema for POST /api/plan/create-doc.
-    Carries the approved LearningPlan to export into a Google Doc.
+    Carries the approved LearningPlan to export into a Google Doc,
+    and optional database plan_id to save the Google Doc URL against the plan record.
     """
     plan: LearningPlan = Field(
         ...,
         description="The approved LearningPlan to export into a Google Doc.",
     )
+    plan_id: Optional[int] = Field(
+        default=None,
+        validation_alias=AliasChoices("plan_id", "planId"),
+        description="Optional database record ID to save Google Docs URL against.",
+    )
+
 
 
 class DocCreateResponse(BaseModel):
@@ -377,3 +393,64 @@ class CalendarCreateResponse(BaseModel):
         default_factory=list,
         description="Detailed per-day event metadata and status.",
     )
+
+
+# ==============================================================================
+# 9. My Plans Dashboard & Persistence Schemas
+# ==============================================================================
+
+class SavedPlanSummary(BaseModel):
+    """
+    Lightweight summary for My Plans dashboard list view.
+    """
+    id: int = Field(..., description="Unique database primary key.")
+    title: str = Field(..., description="Curriculum title.")
+    goal: str = Field(..., description="User's learning goal.")
+    durationDays: Optional[int] = Field(default=None, description="Plan duration in days.")
+    google_doc_url: Optional[str] = Field(default=None, description="Google Doc URL if created.")
+    created_at: Optional[str] = Field(default=None, description="ISO timestamp of creation.")
+    updated_at: Optional[str] = Field(default=None, description="ISO timestamp of last update.")
+
+
+class SavedPlanDetail(BaseModel):
+    """
+    Full details schema for plan details view.
+    """
+    id: int = Field(..., description="Unique database primary key.")
+    title: str = Field(..., description="Curriculum title.")
+    goal: str = Field(..., description="User's learning goal.")
+    input_data: dict = Field(..., description="Original plan generation inputs.")
+    plan_data: dict = Field(..., description="Complete generated curriculum.")
+    google_doc_url: Optional[str] = Field(default=None, description="Google Doc URL if created.")
+    created_at: Optional[str] = Field(default=None, description="ISO timestamp of creation.")
+    updated_at: Optional[str] = Field(default=None, description="ISO timestamp of last update.")
+
+
+class PlanPatchRequest(BaseModel):
+    """
+    Request schema for PATCH /api/plans/{plan_id}.
+    User provides feedback to modify an existing plan record in-place.
+    """
+    feedback: str = Field(
+        ...,
+        min_length=1,
+        max_length=2000,
+        description="Plain-English description of what the user wants changed.",
+        examples=["Add more hands-on exercises and remove theory."],
+    )
+    currentPlan: Optional[LearningPlan] = Field(
+        default=None,
+        description="Optional current plan (loaded from database if omitted).",
+    )
+    durationDays: Optional[int] = Field(default=None, gt=0, le=365)
+    hoursPerDay: Optional[float] = Field(default=None, gt=0.0, le=24.0)
+    startDate: Optional[datetime.date] = None
+
+    @field_validator("feedback")
+    @classmethod
+    def validate_feedback_not_blank(cls, value: str) -> str:
+        cleaned = value.strip()
+        if not cleaned:
+            raise ValueError("Feedback cannot be empty or contain only whitespace.")
+        return cleaned
+

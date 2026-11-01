@@ -50,3 +50,9 @@ pnpm-debug.log*
 .DS_Store
 Thumbs.db
 desktop.ini
+
+# --- Neon & Agent Tooling ---
+.neon
+.agents/
+skills-lock.json
+
