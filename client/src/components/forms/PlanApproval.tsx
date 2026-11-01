@@ -53,6 +53,7 @@ import type {
 } from '../../types/form';
 import {
   modifyLearningPlan,
+  patchPlanById,
   checkGoogleAuthStatus,
   initiateGoogleAuth,
   createGoogleDocForPlan,
@@ -72,6 +73,10 @@ interface PlanApprovalProps {
   currentPlan: LearningPlan;
   /** Original scheduling constraints from the form submission. */
   planConstraints: PlanConstraints;
+  /** Optional database ID if plan is persisted in PostgreSQL. */
+  planId?: number | null;
+  /** Initial Google Docs URL if already created. */
+  initialGoogleDocUrl?: string | null;
   /** Called when the user clicks "Approve Plan". */
   onApprove: () => void;
   /**
@@ -85,6 +90,8 @@ export const PlanApproval: React.FC<PlanApprovalProps> = ({
   status,
   currentPlan,
   planConstraints,
+  planId,
+  initialGoogleDocUrl,
   onApprove,
   onRegenerate,
 }) => {
@@ -100,9 +107,9 @@ export const PlanApproval: React.FC<PlanApprovalProps> = ({
   // Google Docs Creation & Verification state
   const [isCreatingDoc, setIsCreatingDoc] = useState(false);
   const [docCreateError, setDocCreateError] = useState<string | null>(null);
-  const [createdDocUrl, setCreatedDocUrl] = useState<string | null>(null);
+  const [createdDocUrl, setCreatedDocUrl] = useState<string | null>(initialGoogleDocUrl || null);
   const [createdDocId, setCreatedDocId] = useState<string | null>(null);
-  const [isDocVerified, setIsDocVerified] = useState<boolean | null>(null);
+  const [isDocVerified, setIsDocVerified] = useState<boolean | null>(initialGoogleDocUrl ? true : null);
 
   // Google Calendar Scheduling & Verification state
   const [isSchedulingCalendar, setIsSchedulingCalendar] = useState(false);
@@ -151,13 +158,26 @@ export const PlanApproval: React.FC<PlanApprovalProps> = ({
     setRegenError(null);
 
     try {
-      const revised = await modifyLearningPlan({
-        currentPlan,
-        feedback,
-        durationDays: planConstraints.durationDays,
-        hoursPerDay: planConstraints.hoursPerDay,
-        startDate: planConstraints.startDate,
-      });
+      let revised: PlanApiResponse;
+      if (planId) {
+        // If plan is persisted in DB, update record in-place via PATCH /api/plans/{plan_id}
+        revised = await patchPlanById(planId, {
+          feedback,
+          currentPlan,
+          durationDays: planConstraints.durationDays,
+          hoursPerDay: planConstraints.hoursPerDay,
+          startDate: planConstraints.startDate,
+        });
+      } else {
+        // Unsaved plan modification via POST /api/plan/modify
+        revised = await modifyLearningPlan({
+          currentPlan,
+          feedback,
+          durationDays: planConstraints.durationDays,
+          hoursPerDay: planConstraints.hoursPerDay,
+          startDate: planConstraints.startDate,
+        });
+      }
 
       // Success — reset the modify panel and let the parent swap the plan
       setModifyFeedback('');
@@ -181,7 +201,7 @@ export const PlanApproval: React.FC<PlanApprovalProps> = ({
     setIsDocVerified(null);
 
     try {
-      const response = await createGoogleDocForPlan(currentPlan);
+      const response = await createGoogleDocForPlan(currentPlan, planId);
       setCreatedDocUrl(response.documentUrl);
       setCreatedDocId(response.documentId);
       setIsDocVerified(response.verified !== false);

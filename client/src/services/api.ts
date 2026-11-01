@@ -20,6 +20,9 @@ import type {
   LearningPlan,
   DocCreateApiResponse,
   CalendarCreateApiResponse,
+  SavedPlanSummary,
+  SavedPlanDetail,
+  PlanPatchApiRequest,
 } from '../types/form';
 
 // The base URL of our running FastAPI server (configurable via VITE_API_BASE_URL env var)
@@ -143,13 +146,22 @@ export function initiateGoogleAuth(): void {
  * Sends an approved LearningPlan to POST /api/plan/create-doc to create a Google Doc.
  *
  * @param plan - The approved LearningPlan object.
+ * @param planId - Optional database plan ID to persist the created Doc URL.
  * @returns Promise<DocCreateApiResponse> - Document ID and canonical document URL.
  */
-export async function createGoogleDocForPlan(plan: LearningPlan): Promise<DocCreateApiResponse> {
+export async function createGoogleDocForPlan(
+  plan: LearningPlan,
+  planId?: number | null,
+): Promise<DocCreateApiResponse> {
+  const payload: Record<string, any> = { plan };
+  if (planId) {
+    payload.plan_id = planId;
+  }
+
   const response = await fetch(`${API_BASE_URL}/api/plan/create-doc`, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ plan }),
+    body: JSON.stringify(payload),
   });
 
   if (!response.ok) {
@@ -212,4 +224,81 @@ export async function createCalendarEventsForPlan(plan: LearningPlan): Promise<C
   const data: CalendarCreateApiResponse = await response.json();
   return data;
 }
+
+/**
+ * Fetches all saved learning plans from the backend (newest first).
+ */
+export async function fetchSavedPlans(): Promise<SavedPlanSummary[]> {
+  const response = await fetch(`${API_BASE_URL}/api/plans`, {
+    method: 'GET',
+    headers: { 'Content-Type': 'application/json' },
+  });
+
+  if (!response.ok) {
+    let errorDetail = `Failed to fetch plans (status ${response.status})`;
+    try {
+      const errJson = await response.json();
+      if (errJson.detail) errorDetail = errJson.detail;
+    } catch {}
+    throw new Error(errorDetail);
+  }
+
+  return await response.json();
+}
+
+/**
+ * Fetches full plan details for a specific plan ID.
+ */
+export async function fetchPlanById(planId: number): Promise<SavedPlanDetail> {
+  const response = await fetch(`${API_BASE_URL}/api/plans/${planId}`, {
+    method: 'GET',
+    headers: { 'Content-Type': 'application/json' },
+  });
+
+  if (!response.ok) {
+    let errorDetail = `Failed to fetch plan #${planId} (status ${response.status})`;
+    try {
+      const errJson = await response.json();
+      if (errJson.detail) errorDetail = errJson.detail;
+    } catch {}
+    throw new Error(errorDetail);
+  }
+
+  return await response.json();
+}
+
+/**
+ * Updates an existing plan in-place using user feedback.
+ */
+export async function patchPlanById(
+  planId: number,
+  payload: PlanPatchApiRequest,
+): Promise<PlanApiResponse> {
+  const response = await fetch(`${API_BASE_URL}/api/plans/${planId}`, {
+    method: 'PATCH',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(payload),
+  });
+
+  if (!response.ok) {
+    let errorDetail = `Failed to update plan #${planId} (status ${response.status})`;
+    try {
+      const errJson = await response.json();
+      if (typeof errJson.detail === 'string') {
+        errorDetail = errJson.detail;
+      } else if (Array.isArray(errJson.detail)) {
+        errorDetail = errJson.detail
+          .map((item: { loc?: string[]; msg?: string }) => {
+            const field = item.loc ? item.loc[item.loc.length - 1] : 'field';
+            return `${field}: ${item.msg}`;
+          })
+          .join(', ');
+      }
+    } catch {}
+    throw new Error(errorDetail);
+  }
+
+  return await response.json();
+}
+
 

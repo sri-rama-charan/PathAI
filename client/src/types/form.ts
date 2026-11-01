@@ -61,7 +61,39 @@ export interface PlanResult {
 export interface PlanApiResponse {
   message: string;
   data: PlanResult;
+  planId?: number | null;
+  plan_id?: number | null;
 }
+
+export interface SavedPlanSummary {
+  id: number;
+  title: string;
+  goal: string;
+  durationDays?: number | null;
+  google_doc_url?: string | null;
+  created_at?: string | null;
+  updated_at?: string | null;
+}
+
+export interface SavedPlanDetail {
+  id: number;
+  title: string;
+  goal: string;
+  input_data: Record<string, any>;
+  plan_data: LearningPlan;
+  google_doc_url?: string | null;
+  created_at?: string | null;
+  updated_at?: string | null;
+}
+
+export interface PlanPatchApiRequest {
+  feedback: string;
+  currentPlan?: LearningPlan;
+  durationDays?: number;
+  hoursPerDay?: number;
+  startDate?: string;
+}
+
 
 /**
  * Tracks where the user is in the human-approval flow for a generated plan.

@@ -37,9 +37,17 @@ interface SubmissionPreviewProps {
   response: PlanApiResponse;
   onReset: () => void;
   planConstraints: PlanConstraints;
+  initialGoogleDocUrl?: string | null;
+  onBackToDashboard?: () => void;
 }
 
-export const SubmissionPreview: React.FC<SubmissionPreviewProps> = ({ response, onReset, planConstraints }) => {
+export const SubmissionPreview: React.FC<SubmissionPreviewProps> = ({
+  response,
+  onReset,
+  planConstraints,
+  initialGoogleDocUrl,
+  onBackToDashboard,
+}) => {
   const [showJson, setShowJson] = useState(false);
   
   // Approval state: initialized from sessionStorage if returning from OAuth redirect
@@ -203,14 +211,25 @@ export const SubmissionPreview: React.FC<SubmissionPreviewProps> = ({ response, 
           </div>
         </div>
 
-        <button
-          type="button"
-          onClick={onReset}
-          className="flex items-center gap-1.5 px-3.5 py-1.5 text-xs font-medium text-[#000000] bg-[#FFFFFF] hover:bg-[#E5E5E5] active:bg-[#CCCCCC] rounded-lg transition-colors cursor-pointer"
-        >
-          <LuArrowLeft className="w-3.5 h-3.5 text-[#000000]" />
-          <span>New Plan</span>
-        </button>
+        <div className="flex items-center gap-2">
+          {onBackToDashboard && (
+            <button
+              type="button"
+              onClick={onBackToDashboard}
+              className="flex items-center gap-1.5 px-3 py-1.5 text-xs font-medium text-[#EDEDED] bg-[#1A1A1A] hover:bg-[#262626] border border-[#333333] rounded-lg transition-colors cursor-pointer"
+            >
+              <LuArrowLeft className="w-3.5 h-3.5 text-[#EDEDED]" />
+              <span>My Plans</span>
+            </button>
+          )}
+          <button
+            type="button"
+            onClick={onReset}
+            className="flex items-center gap-1.5 px-3.5 py-1.5 text-xs font-medium text-[#000000] bg-[#FFFFFF] hover:bg-[#E5E5E5] active:bg-[#CCCCCC] rounded-lg transition-colors cursor-pointer"
+          >
+            <span>New Plan</span>
+          </button>
+        </div>
       </div>
 
       {/* Curriculum Overview */}
@@ -324,6 +343,8 @@ export const SubmissionPreview: React.FC<SubmissionPreviewProps> = ({ response, 
         status={approvalStatus}
         currentPlan={plan as LearningPlan}
         planConstraints={planConstraints}
+        planId={currentResponse.planId || currentResponse.plan_id}
+        initialGoogleDocUrl={initialGoogleDocUrl}
         onApprove={() => {
           try {
             sessionStorage.setItem('pathai_approval_status', 'approved');
