@@ -96,7 +96,7 @@ def _build_mock_gemini_modified_response() -> MagicMock:
     return mock_res
 
 
-@patch("app.services.llm.get_gemini_client")
+@patch("app.services.plan_service.get_gemini_client")
 def test_modify_learning_plan_with_human_feedback(mock_get_client):
     """
     Evaluates that modify_learning_plan processes human feedback, applies requested changes

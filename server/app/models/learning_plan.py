@@ -1,11 +1,11 @@
 # ==============================================================================
-# File: server/app/models.py
+# File: server/app/models/learning_plan.py
 # Purpose: SQLAlchemy ORM models for PathAI PostgreSQL database.
 # ==============================================================================
 
 import datetime
 from sqlalchemy import Column, Integer, String, Text, DateTime, func
-from app.database import Base, JSON_TYPE
+from app.db.database import Base, JSON_TYPE
 
 
 class LearningPlanModel(Base):
@@ -69,3 +69,4 @@ class LearningPlanModel(Base):
             "created_at": self.created_at.isoformat() if self.created_at else None,
             "updated_at": self.updated_at.isoformat() if self.updated_at else None,
         }
+

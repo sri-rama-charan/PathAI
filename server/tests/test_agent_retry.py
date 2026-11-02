@@ -71,10 +71,10 @@ def test_research_graph_retry_loop():
         }
 
     # Patch the graph node implementations before compiling the workflow
-    with patch("app.services.research_graph.analyze_goal", side_effect=mock_analyze_goal), \
-         patch("app.services.research_graph.search_web", mock_search_web), \
-         patch("app.services.research_graph.evaluate_resources", mock_evaluate_resources), \
-         patch("app.services.research_graph.generate_response", side_effect=mock_generate_response):
+    with patch("app.workflows.research_graph.analyze_goal", side_effect=mock_analyze_goal), \
+         patch("app.workflows.research_graph.search_web", mock_search_web), \
+         patch("app.workflows.research_graph.evaluate_resources", mock_evaluate_resources), \
+         patch("app.workflows.research_graph.generate_response", side_effect=mock_generate_response):
 
         graph = build_research_graph()
 

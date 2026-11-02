@@ -90,7 +90,7 @@ def _build_mock_gemini_response() -> MagicMock:
     return mock_res
 
 
-@patch("app.services.llm.get_gemini_client")
+@patch("app.services.plan_service.get_gemini_client")
 def test_agent_basic_react_plan(mock_get_client):
     """
     Evaluates that generate_learning_plan creates a valid 7-day curriculum matching all requirements.

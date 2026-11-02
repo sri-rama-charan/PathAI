@@ -1,5 +1,5 @@
 # ==============================================================================
-# File: server/app/schemas.py
+# File: server/app/schemas/plan.py
 # Purpose: Pydantic schemas for request validation, structured LLM outputs, and responses.
 #
 # What this file does:
@@ -8,6 +8,11 @@
 # 3. LearningPlan: Full curriculum containing overview, prerequisites, and days.
 # 4. PlanResult: Feasibility assessment and optional LearningPlan (for Gemini structured output).
 # 5. PlanResponse: Standard API response wrapper returning the PlanResult.
+# 6. SearchResult & SearchResponse: Provider-independent search schemas.
+# 7. ResearchRequest & ResearchResponse: Research graph workflow schemas.
+# 8. PlanModifyRequest: Revision feedback and constraints schema.
+# 9. Google Docs & Calendar schemas: DocCreateRequest, CalendarCreateRequest, etc.
+# 10. Dashboard & Persistence schemas: SavedPlanSummary, SavedPlanDetail, PlanPatchRequest.
 # ==============================================================================
 
 import datetime
@@ -313,7 +318,6 @@ class DocCreateRequest(BaseModel):
     )
 
 
-
 class DocCreateResponse(BaseModel):
     """
     Response schema for POST /api/plan/create-doc.
@@ -345,7 +349,7 @@ class DocCreateResponse(BaseModel):
 class CalendarCreateRequest(BaseModel):
     """
     Request schema for POST /api/plan/create-calendar.
-    Carries the approved LearningPlan to export into Google Calendar events.
+    Carries the approved LearningPlan to schedule on Google Calendar.
     """
     plan: LearningPlan = Field(
         ...,

@@ -10,10 +10,10 @@ from fastapi.testclient import TestClient
 from sqlalchemy import create_engine
 from sqlalchemy.orm import sessionmaker
 
-from app.database import Base, get_db
-from app.models import LearningPlanModel
+from app.db.database import Base, get_db
+from app.models.learning_plan import LearningPlanModel
 from app.main import app
-from app.schemas import PlanResult, LearningPlan, DayPlan
+from app.schemas.plan import PlanResult, LearningPlan, DayPlan
 
 from sqlalchemy.pool import StaticPool
 
@@ -100,7 +100,7 @@ def test_automatic_plan_saving_on_successful_generation(client, db_session):
         plan=plan,
     )
 
-    with patch("app.main.generate_learning_plan", return_value=mock_result):
+    with patch("app.api.v1.plans.generate_learning_plan", return_value=mock_result):
         payload = {
             "goal": "Learn Python basics",
             "experience": "Beginner",
@@ -138,7 +138,7 @@ def test_infeasible_plan_not_saved_to_database(client, db_session):
         plan=None,
     )
 
-    with patch("app.main.generate_learning_plan", return_value=mock_result):
+    with patch("app.api.v1.plans.generate_learning_plan", return_value=mock_result):
         payload = {
             "goal": "Master Quantum Computing",
             "experience": "None",
@@ -255,7 +255,7 @@ def test_patch_plan_updates_in_place(client, db_session):
         plan=revised_plan,
     )
 
-    with patch("app.main.modify_learning_plan", return_value=revised_result):
+    with patch("app.api.v1.plans.modify_learning_plan", return_value=revised_result):
         patch_payload = {
             "feedback": "Add more coding projects and practice exercises.",
         }
@@ -297,8 +297,8 @@ def test_create_doc_saves_url_against_plan_record(client, db_session):
         "verified": True,
     }
 
-    with patch("app.main.is_google_connected", return_value=True), \
-         patch("app.main.create_google_doc_for_plan", return_value=mock_doc_result):
+    with patch("app.api.v1.plans.is_google_connected", return_value=True), \
+         patch("app.api.v1.plans.create_google_doc_for_plan", return_value=mock_doc_result):
         
         doc_payload = {
             "plan": plan.model_dump(mode="json"),

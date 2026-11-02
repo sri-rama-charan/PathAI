@@ -35,10 +35,10 @@ def test_research_workflow_external_search_failure():
     mock_search_web.side_effect = RuntimeError("Tavily Search API Connection Timeout")
     mock_call_gemini = MagicMock(return_value="Analysis: React fundamentals. Search Query: Learn React tutorials documentation")
 
-    with patch("app.services.research_graph._generate_with_fallback", mock_call_gemini), \
-         patch("app.services.research_graph.search_web", mock_search_web), \
-         patch("app.services.research_graph.evaluate_resources", side_effect=mock_evaluate_resources_for_failure), \
-         patch("app.services.research_graph.generate_response", side_effect=mock_generate_response_for_failure):
+    with patch("app.workflows.research_graph._generate_with_fallback", mock_call_gemini), \
+         patch("app.workflows.research_graph.search_web", mock_search_web), \
+         patch("app.workflows.research_graph.evaluate_resources", side_effect=mock_evaluate_resources_for_failure), \
+         patch("app.workflows.research_graph.generate_response", side_effect=mock_generate_response_for_failure):
 
         # Act: Execute research workflow with failing search_web
         response = run_research_workflow("Learn React")
