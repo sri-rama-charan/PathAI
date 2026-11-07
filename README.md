@@ -114,3 +114,21 @@ npm run dev
 ```
 
 - Frontend application: [http://localhost:5173/](http://localhost:5173/)
+
+
+
+
+Learning Path Generator
+
+Purpose: Built an agentic learning planner for research, evaluation, retries, and personalized plan generation.
+
+Technologies: React, Fast API, LangGraph, Gemini, Google Calendar API, JavaScript, Tailwind CSS
+
+Features: 
+- Personalized plan generation based on knowledge level and time availability
+- Detailed Plan written in Google doc
+- Automated Scheduling in Google Calendar
+- Detailed Roadmap generation with suitable steps and corresponding resources for each step
+- Daily remainders 
+- Knowledge testing through quizzes and providing effective feedback
+- Personalized AI Progress reports based on user's regular performance
